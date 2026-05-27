@@ -5,11 +5,10 @@ const nextConfig = {
       {
         source: '/api/:path*',
         destination: process.env.NODE_ENV === 'development'
-          ? 'http://127.0.0*' // Local FastAPI
-          : '/api/:path*',                     // Production Vercel Functions
+          ? 'http://127.0.0*' // local FastAPI proxy
+          : '/api/:path*',                     // production serverless
       },
     ]
   },
 }
-
 module.exports = nextConfig
