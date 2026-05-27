@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import chat, validate
-from services.graph import get_graph
+from .routers import chat, validate
+from .services.graph import get_graph
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

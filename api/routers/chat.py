@@ -3,8 +3,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
-from services.graph import get_graph
-from config import DEFAULT_MODEL, OPENAI_BASE_URL
+from ..services.graph import get_graph
+from ..config import DEFAULT_MODEL, OPENAI_BASE_URL
 
 router = APIRouter(prefix="/api", tags=["chat"])
 

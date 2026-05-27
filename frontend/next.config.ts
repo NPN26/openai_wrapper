@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
+const backendUrl = (process.env.BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+
+const nextConfig: NextConfig = {
   async rewrites() {
     if (process.env.NODE_ENV !== "development") {
       return [];
     }
-
-    const backendUrl = (process.env.BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
     return [
       {
@@ -15,6 +15,6 @@ const nextConfig = {
       },
     ];
   },
-} satisfies NextConfig;
+};
 
 export default nextConfig;

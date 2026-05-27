@@ -30,14 +30,6 @@ Requests to `/api/*` are proxied to `http://localhost:8000` by default. To use a
 BACKEND_URL=http://localhost:8000 npm run dev
 ```
 
-## Deploying on Vercel
-
-Deploy this repository as a single Vercel project from the repo root.
-
-The Next.js app is built from `frontend/`, and the FastAPI backend is exposed from the root `api/` folder in the same deployment. In production, leave `BACKEND_URL` unset so the frontend calls the local `/api/*` routes on the same domain.
-
-Vercel should use the repo root as the project root, with the build and install commands pointing at the frontend folder. Make sure the root `api/requirements.txt` file stays in place so the Python dependencies are installed during build.
-
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
@@ -53,6 +45,14 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Deploy the repo as a single Vercel project from the repository root.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use these settings:
+
+1. Framework Preset: `Next.js`
+2. Root Directory: `.`
+3. Install Command: `cd frontend && npm install`
+4. Build Command: `cd frontend && npm run build`
+5. Environment Variables: add `DATABASE_URL` and any OpenAI / LangSmith / Postgres variables you use in production
+
+The Next.js app lives in `frontend/`, and the FastAPI app is exposed from `api/index.py` as a Python serverless entrypoint. In local development, `/api/*` proxies to `http://127.0.0.1:8000` by default, or to `BACKEND_URL` if you set one.

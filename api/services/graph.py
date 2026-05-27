@@ -6,7 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
-from config import settings, SYSTEM_PROMPT
+from ..config import settings, SYSTEM_PROMPT
 
 class State(TypedDict):
     messages: Annotated[list[AIMessage | HumanMessage], add_messages]
