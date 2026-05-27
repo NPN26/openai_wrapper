@@ -30,6 +30,15 @@ Requests to `/api/*` are proxied to `http://localhost:8000` by default. To use a
 BACKEND_URL=http://localhost:8000 npm run dev
 ```
 
+## Deploying on Vercel
+
+You can deploy this repo as either one Vercel project or two:
+
+1. If the frontend and FastAPI backend are deployed together in the same Vercel project, leave `BACKEND_URL` unset. The frontend will call `/api/*` on the same domain and Vercel will serve the Python functions from the root `api/` folder.
+2. If the frontend is deployed separately from the backend, set `BACKEND_URL` in the frontend project to the backend's public URL. The Next.js rewrites will proxy `/api/*` to that backend.
+
+For the backend project, make sure the Vercel project includes the root `api/requirements.txt` file so the Python dependencies are installed during build.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

@@ -1,20 +1,26 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  reactCompiler: true,
+const nextConfig = {
   async rewrites() {
-    const backendUrl =
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_BACKEND_URL ||
-      "http://localhost:8000";
+    const shouldProxyApi =
+      process.env.NODE_ENV === "development" || Boolean(process.env.BACKEND_URL);
+
+    if (!shouldProxyApi) {
+      return [];
+    }
+
+    const backendUrl = (process.env.BACKEND_URL ?? "http://127.0.0.1:8000").replace(
+      /\/$/,
+      "",
+    );
 
     return [
       {
         source: "/api/:path*",
-        destination: `${backendUrl.replace(/\/$/, "")}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },
-};
+} satisfies NextConfig;
 
 export default nextConfig;
