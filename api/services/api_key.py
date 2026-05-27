@@ -1,5 +1,5 @@
 import requests
-from config import OPENAI_BASE_URL
+from api.config import OPENAI_BASE_URL
 
 def check_api_key(api_key: str, base_url: str = OPENAI_BASE_URL) -> bool:
     try:

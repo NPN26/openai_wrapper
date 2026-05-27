@@ -1,2 +1,19 @@
+[project]
+name = "openai-wrapper"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+	"fastapi>=0.110.0",
+	"pydantic>=2.0.0",
+	"pydantic-settings>=2.0.0",
+	"requests>=2.31.0",
+	"langchain>=0.2.0",
+	"langchain-core>=0.2.0",
+	"langgraph>=0.2.0",
+	"langgraph-checkpoint-postgres>=3.1.0",
+	"psycopg>=3.1.0",
+	"uvicorn>=0.30.0",
+]
+
 [tool.vercel]
-entrypoint = "backend.main:app"
+entrypoint = "api.index:app"
