@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from ..services.api_key import validate_key
-from ..config import OPENAI_BASE_URL
+from services.api_key import validate_key
+from config import OPENAI_BASE_URL
 
 router = APIRouter(prefix="/api", tags=["validation"])
 

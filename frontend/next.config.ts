@@ -1,20 +1,15 @@
-import type { NextConfig } from "next";
-
-const backendUrl = (process.env.BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
-
-const nextConfig: NextConfig = {
-  async rewrites() {
-    if (process.env.NODE_ENV !== "development") {
-      return [];
-    }
-
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  rewrites: async () => {
     return [
       {
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
+        source: '/api/:path*',
+        destination: process.env.NODE_ENV === 'development'
+          ? 'http://127.0.0*' // Local FastAPI
+          : '/api/:path*',                     // Production Vercel Functions
       },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+module.exports = nextConfig
