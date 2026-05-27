@@ -1,0 +1,144 @@
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
+from services.graph import get_graph
+from config import DEFAULT_MODEL, OPENAI_BASE_URL
+
+router = APIRouter(prefix="/api", tags=["chat"])
+
+# ── Request / Response models ──────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    thread_id: str
+    message: str
+    api_key: str
+    model: str = DEFAULT_MODEL
+    base_url: str = OPENAI_BASE_URL
+
+class MessageOut(BaseModel):
+    role: str   # "user" | "assistant"
+    content: str
+
+class ChatResponse(BaseModel):
+    reply: str
+    thread_id: str
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+def _extract_content(msg) -> str:
+    """Mirrors your response_to_text() from Streamlit."""
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("text"):
+                parts.append(item["text"])
+        return "\n".join(parts).strip()
+    return str(content).strip()
+
+def _make_config(thread_id: str, req: ChatRequest) -> RunnableConfig:
+    """Mirrors the config dict you built in Streamlit."""
+    return {
+        "configurable": {
+            "thread_id": thread_id,
+            "model": req.model or DEFAULT_MODEL,
+            "api_key": req.api_key,
+            "base_url": req.base_url or OPENAI_BASE_URL,
+        }
+    }
+
+# ── Endpoints ──────────────────────────────────────────────────────────────
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest):
+    """Send a message and get a reply. Mirrors graph.invoke() in Streamlit."""
+    graph = get_graph()
+    config: RunnableConfig = _make_config(req.thread_id, req)
+
+    try:
+        result = graph.invoke(
+            {"messages": [HumanMessage(content=req.message)]},
+            config=config,
+        )
+        reply = _extract_content(result["messages"][-1])
+        return ChatResponse(reply=reply, thread_id=req.thread_id)
+    except Exception as exc:
+        error = str(exc)
+        if "Malformed identifier" in error:
+            error += " Use the Azure deployment name in the Model field."
+        raise HTTPException(status_code=500, detail=error)
+
+
+@router.get("/chat/{thread_id}/history", response_model=list[MessageOut])
+def get_history(thread_id: str):
+    """
+    Load prior messages for a thread.
+    Mirrors graph.get_state(config).values.get("messages", []) in Streamlit.
+    """
+    graph = get_graph()
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = graph.get_state(config)
+        messages = snapshot.values.get("messages", [])
+    except Exception:
+        messages = []
+
+    result = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            result.append(MessageOut(role="user", content=_extract_content(msg)))
+        elif isinstance(msg, AIMessage):
+            result.append(MessageOut(role="assistant", content=_extract_content(msg)))
+    return result
+
+
+@router.post("/chat/stream")
+def chat_stream(req: ChatRequest):
+    """Streaming version - token by token, for a typewriter effect on the frontend."""
+    graph = get_graph()
+    config: RunnableConfig = _make_config(req.thread_id, req)
+
+    def token_generator():
+        for event in graph.stream(
+            {"messages": [HumanMessage(content=req.message)]},
+            config=config,
+            stream_mode="messages",
+        ):
+            # stream_mode="messages" yields (message_chunk, metadata) tuples
+            message_chunk, _ = event if isinstance(event, tuple) else (event, {})
+            token = getattr(message_chunk, "content", "")
+            if token:
+                yield token
+
+    return StreamingResponse(token_generator(), media_type="text/plain")
+
+@router.get("/chats")
+def list_chats():
+    """Retrieve the list of all thread IDs."""
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if not checkpointer:
+            return []
+
+        seen: set[str] = set()
+        threads: list[str] = []
+        for item in checkpointer.list(None):
+            thread_id = (
+                item.config.get("configurable", {}).get("thread_id")
+                if isinstance(item.config, dict)
+                else None
+            )
+            if thread_id and thread_id not in seen:
+                seen.add(thread_id)
+                threads.append(thread_id)
+
+        return [{"threadId": thread_id} for thread_id in threads if thread_id]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

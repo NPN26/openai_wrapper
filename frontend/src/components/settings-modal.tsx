@@ -1,0 +1,116 @@
+"use client";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+
+type Props = {
+  open: boolean;
+  onValidated: (cfg: { apiKey: string; baseUrl: string; model: string }) => void;
+};
+
+export function SettingsModal({ open, onValidated }: Props) {
+  const defaultBaseUrl = "https://api.openai.com/v1";
+  const defaultModel = "gpt-4.1";
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
+  const [model, setModel] = useState(defaultModel);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (!apiKey.trim()) return setError("API key is required");
+    const normalizedBaseUrl = baseUrl.trim() || defaultBaseUrl;
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, base_url: normalizedBaseUrl }),
+      });
+
+      const raw = await res.text();
+      let data: { valid?: boolean; message?: string; detail?: string } = {};
+      if (raw) {
+        try {
+          data = JSON.parse(raw) as { valid?: boolean; message?: string; detail?: string };
+        } catch {
+          if (!res.ok) {
+            throw new Error(raw);
+          }
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          data.detail ||
+          data.message ||
+          raw ||
+          `Validation failed with status ${res.status}`,
+        );
+      }
+
+      if (data.valid) {
+        const cfg = { apiKey, baseUrl: normalizedBaseUrl, model };
+        onValidated(cfg);
+      } else {
+        setError(data.message || "Validation failed");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Validation request failed";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <Card className="w-full max-w-lg p-6">
+        <h2 className="text-xl font-semibold mb-4">Configure OpenAI</h2>
+        <div className="grid gap-3">
+          <label className="text-sm text-muted-foreground">Base URL (optional)</label>
+          <Input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.openai.com/v1 or Azure resource endpoint"
+          />
+
+          <label className="text-sm text-muted-foreground">API Key</label>
+          <Input
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-... or azure key"
+          />
+
+          <label className="text-sm text-muted-foreground">Model / Deployment</label>
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+          />
+
+          {error && <div className="text-sm text-destructive">{error}</div>}
+
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="secondary" onClick={() => {
+              // Clear in-memory form fields and keep modal open.
+              setApiKey("");
+              setBaseUrl(defaultBaseUrl);
+              setModel(defaultModel);
+            }}>
+              Reset
+            </Button>
+            <Button onClick={submit} disabled={isLoading}>
+              {isLoading ? "Validating..." : "Save & Validate"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+export default SettingsModal;
