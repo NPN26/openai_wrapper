@@ -32,12 +32,11 @@ BACKEND_URL=http://localhost:8000 npm run dev
 
 ## Deploying on Vercel
 
-You can deploy this repo as either one Vercel project or two:
+Deploy this repository as a single Vercel project from the repo root.
 
-1. If the frontend and FastAPI backend are deployed together in the same Vercel project, leave `BACKEND_URL` unset. The frontend will call `/api/*` on the same domain and Vercel will serve the Python functions from the root `api/` folder.
-2. If the frontend is deployed separately from the backend, set `BACKEND_URL` in the frontend project to the backend's public URL. The Next.js rewrites will proxy `/api/*` to that backend.
+The Next.js app is built from `frontend/`, and the FastAPI backend is exposed from the root `api/` folder in the same deployment. In production, leave `BACKEND_URL` unset so the frontend calls the local `/api/*` routes on the same domain.
 
-For the backend project, make sure the Vercel project includes the root `api/requirements.txt` file so the Python dependencies are installed during build.
+Vercel should use the repo root as the project root, with the build and install commands pointing at the frontend folder. Make sure the root `api/requirements.txt` file stays in place so the Python dependencies are installed during build.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
