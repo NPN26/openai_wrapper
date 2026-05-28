@@ -142,3 +142,38 @@ def list_chats():
         return [{"threadId": thread_id} for thread_id in threads if thread_id]
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    
+@router.delete("/chat/{thread_id}")
+def delete_chat(thread_id: str):
+    """Delete a thread."""
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if not checkpointer:
+            raise HTTPException(status_code=404, detail="No checkpointer configured")
+
+        checkpointer.delete_thread(thread_id)
+        return {"detail": f"Thread {thread_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.delete("/chats")
+def delete_all_chats():
+    """Delete all threads."""
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if not checkpointer:
+            raise HTTPException(status_code=404, detail="No checkpointer configured")
+
+        # Delete all checkpoints
+        for item in checkpointer.list(None):
+            checkpointer.delete(item.id)
+
+        return {"detail": "All threads deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
