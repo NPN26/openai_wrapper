@@ -33,8 +33,12 @@ _graph = None
 def get_graph():
     global _graph
     if _graph is None:
-        conn = Connection.connect(settings.POSTGRES_URI, autocommit=True)
-        checkpointer = PostgresSaver(conn)
-        checkpointer.setup()
-        _graph = builder.compile(checkpointer=checkpointer)
+        postgres_uri = settings.POSTGRES_URI.strip()
+        if postgres_uri:
+            conn = Connection.connect(postgres_uri, autocommit=True)
+            checkpointer = PostgresSaver(conn)
+            checkpointer.setup()
+            _graph = builder.compile(checkpointer=checkpointer)
+        else:
+            _graph = builder.compile()
     return _graph
