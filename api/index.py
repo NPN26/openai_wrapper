@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import chat, validate
-from api.services.graph import get_graph
+from api.services.graph import get_graph, close_pool
 from api.config import settings
 
 @asynccontextmanager
@@ -10,6 +10,7 @@ async def lifespan(app: FastAPI):
     if settings.POSTGRES_URI.strip():
         get_graph()
     yield
+    close_pool()
 
 app = FastAPI(title="OpenAI Wrapper API", lifespan=lifespan)
 

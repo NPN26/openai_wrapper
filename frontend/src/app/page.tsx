@@ -144,6 +144,15 @@ export default function Home() {
     }
   };
 
+  if (!validated) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <SettingsModal open={showSettings} onValidated={handleValidated} />
+        <p className="text-muted-foreground">Please configure your settings to continue.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid h-screen w-full lg:grid-cols-[280px_1fr]">
       <Sidebar
