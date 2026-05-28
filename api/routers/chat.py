@@ -53,6 +53,37 @@ def _make_config(thread_id: str, req: ChatRequest) -> RunnableConfig:
         }
     }
 
+def _delete_all_threads_fast(checkpointer) -> bool:
+    """Fast-path delete for Postgres-backed checkpointers."""
+    try:
+        from langgraph.checkpoint.postgres.base import BasePostgresSaver
+    except Exception:
+        return False
+
+    if not isinstance(checkpointer, BasePostgresSaver):
+        return False
+
+    conn = getattr(checkpointer, "conn", None)
+    if conn is None:
+        return False
+
+    if hasattr(conn, "connection"):
+        with conn.connection() as db:
+            with db.cursor() as cur:
+                cur.execute("DELETE FROM checkpoint_writes")
+                cur.execute("DELETE FROM checkpoint_blobs")
+                cur.execute("DELETE FROM checkpoints")
+        return True
+
+    if hasattr(conn, "cursor"):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM checkpoint_writes")
+            cur.execute("DELETE FROM checkpoint_blobs")
+            cur.execute("DELETE FROM checkpoints")
+        return True
+
+    return False
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
@@ -167,6 +198,9 @@ def delete_all_chats():
         checkpointer = getattr(graph, "checkpointer", None)
         if not checkpointer:
             raise HTTPException(status_code=404, detail="No checkpointer configured")
+
+        if _delete_all_threads_fast(checkpointer):
+            return {"detail": "All threads deleted"}
 
         seen: set[str] = set()
         for item in checkpointer.list(None):
