@@ -168,9 +168,16 @@ def delete_all_chats():
         if not checkpointer:
             raise HTTPException(status_code=404, detail="No checkpointer configured")
 
-        # Delete all checkpoints
+        seen: set[str] = set()
         for item in checkpointer.list(None):
-            checkpointer.delete(item.id)
+            thread_id = (
+                item.config.get("configurable", {}).get("thread_id")
+                if isinstance(item.config, dict)
+                else None
+            )
+            if thread_id and thread_id not in seen:
+                checkpointer.delete_thread(thread_id)
+                seen.add(thread_id)
 
         return {"detail": "All threads deleted"}
     except HTTPException:
