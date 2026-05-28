@@ -1,9 +1,7 @@
-from typing import TypedDict, Annotated, cast, Any
-from psycopg import Connection
+from typing import TypedDict, Annotated
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
 from api.config import settings, SYSTEM_PROMPT
@@ -35,6 +33,14 @@ def get_graph():
     if _graph is None:
         postgres_uri = settings.POSTGRES_URI.strip()
         if postgres_uri:
+            try:
+                from psycopg import Connection
+                from langgraph.checkpoint.postgres import PostgresSaver
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Postgres support requires psycopg with libpq. "
+                    "Install psycopg[binary] on Vercel or unset POSTGRES_URI."
+                ) from exc
             conn = Connection.connect(postgres_uri, autocommit=True)
             checkpointer = PostgresSaver(conn)
             checkpointer.setup()
