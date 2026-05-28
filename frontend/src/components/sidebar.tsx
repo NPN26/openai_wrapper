@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
 interface ChatHistoryItem {
@@ -31,11 +30,18 @@ export function ConfirmDeleteDialog({
   title: string;
   description: string;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <span
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
         {children}
-      </AlertDialogTrigger>
+      </span>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -45,7 +51,7 @@ export function ConfirmDeleteDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={(e) => { e.stopPropagation(); onConfirm(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+          <AlertDialogAction onClick={(e) => { e.stopPropagation(); onConfirm(); setOpen(false); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
