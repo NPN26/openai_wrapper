@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import {
@@ -23,9 +23,13 @@ interface ChatHistoryItem {
 export function ConfirmDeleteDialog({
   onConfirm,
   children,
+  title,
+  description,
 }: {
   onConfirm: () => void;
   children: React.ReactNode;
+  title: string;
+  description: string;
 }) {
   return (
     <AlertDialog>
@@ -34,9 +38,9 @@ export function ConfirmDeleteDialog({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Chat?</AlertDialogTitle>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete this chat? This action cannot be undone.
+            {description}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -66,22 +70,29 @@ export function Sidebar({
     try {
       const res = await fetch("/api/chats");
       const data = await res.json();
-      startTransition(() => {
-        setChatHistory(Array.isArray(data) ? data : []);
-        setIsLoading(false);
-      });
+      setChatHistory(Array.isArray(data) ? data : []);
+      setIsLoading(false);
     } catch (error) {
       console.error("Failed to fetch chat history:", error);
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void fetchChats();
-    }, 0);
+  const deleteChats = async () => {
+    try {      
+      const res = await fetch("/api/chats", { method: "DELETE" });
+      if (!res.ok) {
+        throw new Error("Failed to delete chats");
+      }
+      setChatHistory([]);
+    } catch (error) {
+      console.error("Failed to delete chats:", error);
+    }
+  };
 
-    return () => window.clearTimeout(timeoutId);
+
+  useEffect(() => {
+    void fetchChats();
   }, [refreshKey]);
 
   return (
@@ -92,6 +103,14 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto space-y-2">
         <div className="text-sm font-semibold text-muted-foreground px-2">
           Recent
+          <ConfirmDeleteDialog onConfirm={deleteChats} title="Delete all chats?" description="Are you sure you want to delete all chats? This action cannot be undone.">
+            <button
+              className="group-hover:opacity-100 p-1 rounded-md bg-destructive text-white hover:bg-destructive/20 hover:text-destructive transition-all"
+              aria-label="Delete all chats"
+            >
+              Delete all Chats
+            </button>
+          </ConfirmDeleteDialog>
         </div>
         {isLoading ? (
           <div className="text-sm text-muted-foreground px-2">Loading...</div>
@@ -101,21 +120,27 @@ export function Sidebar({
           chatHistory.map((chat) => (
             <div
               key={chat.threadId}
-              onClick={() => onSelectChat(chat.threadId)}
-              className="group relative flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
+              className="group relative flex items-center rounded-lg text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              <span className="truncate pr-6">
+              <button
+                type="button"
+                onClick={() => onSelectChat(chat.threadId)}
+                className="flex-1 text-left px-3 py-2 truncate pr-10"
+              >
                 {chat.title || `Chat ${chat.threadId.substring(0, 8)}`}
-              </span>
-              
-              <ConfirmDeleteDialog onConfirm={() => onDeleteChat(chat.threadId)}>
-                <button
-                  className="right-2 opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-destructive/20 hover:text-destructive transition-all"
-                  aria-label="Delete chat"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </ConfirmDeleteDialog>
+              </button>
+
+              <div className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ConfirmDeleteDialog onConfirm={() => onDeleteChat(chat.threadId)} title="Delete Chat?" description="Are you sure you want to delete this chat? This action cannot be undone.">
+                  <button
+                    type="button"
+                    className="p-1 rounded-md hover:bg-destructive/20 hover:text-destructive transition-colors"
+                    aria-label="Delete chat"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </ConfirmDeleteDialog>
+              </div>
             </div>
           ))
         )}
