@@ -53,6 +53,37 @@ def _make_config(thread_id: str, req: ChatRequest) -> RunnableConfig:
         }
     }
 
+def _delete_all_threads_fast(checkpointer) -> bool:
+    """Fast-path delete for Postgres-backed checkpointers."""
+    try:
+        from langgraph.checkpoint.postgres.base import BasePostgresSaver
+    except Exception:
+        return False
+
+    if not isinstance(checkpointer, BasePostgresSaver):
+        return False
+
+    conn = getattr(checkpointer, "conn", None)
+    if conn is None:
+        return False
+
+    if hasattr(conn, "connection"):
+        with conn.connection() as db:
+            with db.cursor() as cur:
+                cur.execute("DELETE FROM checkpoint_writes")
+                cur.execute("DELETE FROM checkpoint_blobs")
+                cur.execute("DELETE FROM checkpoints")
+        return True
+
+    if hasattr(conn, "cursor"):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM checkpoint_writes")
+            cur.execute("DELETE FROM checkpoint_blobs")
+            cur.execute("DELETE FROM checkpoints")
+        return True
+
+    return False
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
@@ -140,5 +171,50 @@ def list_chats():
                 threads.append(thread_id)
 
         return [{"threadId": thread_id} for thread_id in threads if thread_id]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    
+@router.delete("/chat/{thread_id}")
+def delete_chat(thread_id: str):
+    """Delete a thread."""
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if not checkpointer:
+            raise HTTPException(status_code=404, detail="No checkpointer configured")
+
+        checkpointer.delete_thread(thread_id)
+        return {"detail": f"Thread {thread_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.delete("/chats")
+def delete_all_chats():
+    """Delete all threads."""
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if not checkpointer:
+            raise HTTPException(status_code=404, detail="No checkpointer configured")
+
+        if _delete_all_threads_fast(checkpointer):
+            return {"detail": "All threads deleted"}
+
+        seen: set[str] = set()
+        for item in checkpointer.list(None):
+            thread_id = (
+                item.config.get("configurable", {}).get("thread_id")
+                if isinstance(item.config, dict)
+                else None
+            )
+            if thread_id and thread_id not in seen:
+                checkpointer.delete_thread(thread_id)
+                seen.add(thread_id)
+
+        return {"detail": "All threads deleted"}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

@@ -120,6 +120,37 @@ export default function Home() {
   const handleSelectChat = (id: string) => {
     setThreadId(id);
     void loadChatHistory(id);
+  };
+
+  const handleDeleteChat = async (id: string) => {
+    try {
+      const res = await fetch(`/api/chat/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete chat");
+      }
+
+      // If the deleted chat is currently loaded, clear the messages
+      if (id === threadId) {
+        setMessages([]);
+        setThreadId(crypto.randomUUID());
+      }
+
+      setChatsRefreshKey((value) => value + 1);
+    } catch (err) {
+      console.error("Error deleting chat:", err);
+    }
+  };
+
+  if (!validated) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <SettingsModal open={showSettings} onValidated={handleValidated} />
+        <p className="text-muted-foreground">Please configure your settings to continue.</p>
+      </div>
+    );
   }
 
   return (
@@ -127,6 +158,7 @@ export default function Home() {
       <Sidebar
         onNewChat={handleNewChat}
         onSelectChat={handleSelectChat}
+        onDeleteChat={handleDeleteChat}
         refreshKey={chatsRefreshKey}
       />
 
