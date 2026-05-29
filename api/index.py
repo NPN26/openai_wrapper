@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import chat, validate
+from api.routers import chat, validate, validate_langsmith
 from api.services.graph import get_graph, close_pool
 from api.config import settings
 
@@ -23,3 +23,4 @@ app.add_middleware(
 
 app.include_router(chat.router)
 app.include_router(validate.router)
+app.include_router(validate_langsmith.router)

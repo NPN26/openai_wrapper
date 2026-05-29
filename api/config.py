@@ -19,5 +19,6 @@ os.environ["LANGSMITH_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
 os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
 
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+LANGSMITH_BASE_URL = "https://api.smith.langchain.com"
 DEFAULT_MODEL = "gpt-4.1"
 SYSTEM_PROMPT = "You are a helpful chat assistant. Reply naturally and keep the conversation going."

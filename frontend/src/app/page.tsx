@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sidebar } from "@/components/sidebar";
 import SettingsModal from "@/components/settings-modal";
+import LangsmithSettingsModal, {
+  LangsmithConfig,
+} from "@/components/langsmith-settings-modal";
 
 type Message = { role: "user" | "assistant"; content: string };
 type ChatConfig = { apiKey: string; baseUrl: string; model: string };
@@ -15,9 +18,11 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(true);
   const [validated, setValidated] = useState(false);
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
+  const [langsmithConfig, setLangsmithConfig] = useState<LangsmithConfig | null>(null);
   const [threadId, setThreadId] = useState(() => crypto.randomUUID());
   const [chatsRefreshKey, setChatsRefreshKey] = useState(0);
   const [canCloseSettings, setCanCloseSettings] = useState(false);
+  const [showLangsmithSettings, setShowLangsmithSettings] = useState(false);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -42,6 +47,15 @@ export default function Home() {
     setIsLoading(true);
 
     try {
+      const langsmithPayload = langsmithConfig
+        ? {
+            langsmith_api_key: langsmithConfig.apiKey,
+            langsmith_api_url: langsmithConfig.apiUrl,
+            langsmith_workspace_id: langsmithConfig.workspaceId || undefined,
+            langsmith_project: langsmithConfig.projectName,
+          }
+        : {};
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -51,6 +65,7 @@ export default function Home() {
           api_key: chatConfig.apiKey,
           model: chatConfig.model,
           base_url: chatConfig.baseUrl,
+          ...langsmithPayload,
         }),
       });
 
@@ -158,6 +173,19 @@ export default function Home() {
     setCanCloseSettings(false);
   };
 
+  const handleOpenLangsmithSettings = () => {
+    setShowLangsmithSettings(true);
+  };
+
+  const handleCancelLangsmithSettings = () => {
+    setShowLangsmithSettings(false);
+  };
+
+  const handleLangsmithValidated = (cfg: LangsmithConfig) => {
+    setLangsmithConfig(cfg);
+    setShowLangsmithSettings(false);
+  };
+
   if (!validated) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -190,10 +218,23 @@ export default function Home() {
         initialConfig={chatConfig}
       />
 
+      {showLangsmithSettings && (
+        <LangsmithSettingsModal
+          open
+          onValidated={handleLangsmithValidated}
+          onCancel={handleCancelLangsmithSettings}
+          allowClose
+          initialConfig={langsmithConfig}
+        />
+      )}
+
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         <div className="flex items-center justify-between border-b px-6 py-3">
           <div className="text-sm font-semibold text-muted-foreground">Chat</div>
+          <Button variant="outline" size="sm" onClick={handleOpenLangsmithSettings}>
+            Add Langsmith Settings
+          </Button>
           <Button variant="outline" size="sm" onClick={handleOpenSettings}>
             Edit API Settings
           </Button>

@@ -1,8 +1,11 @@
+from contextlib import nullcontext
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tracers.context import tracing_v2_enabled
+from langsmith import Client
 from api.services.graph import get_graph
 from api.config import DEFAULT_MODEL, OPENAI_BASE_URL
 
@@ -16,6 +19,10 @@ class ChatRequest(BaseModel):
     api_key: str
     model: str = DEFAULT_MODEL
     base_url: str = OPENAI_BASE_URL
+    langsmith_api_key: str | None = None
+    langsmith_api_url: str | None = None
+    langsmith_workspace_id: str | None = None
+    langsmith_project: str | None = None
 
 class MessageOut(BaseModel):
     role: str   # "user" | "assistant"
@@ -52,6 +59,31 @@ def _make_config(thread_id: str, req: ChatRequest) -> RunnableConfig:
             "base_url": req.base_url or OPENAI_BASE_URL,
         }
     }
+
+
+def _langsmith_context(req: ChatRequest):
+    api_key = (req.langsmith_api_key or "").strip()
+    api_url = (req.langsmith_api_url or "").strip()
+    workspace_id = (req.langsmith_workspace_id or "").strip()
+    project_name = (req.langsmith_project or "").strip()
+
+    if not api_key and not api_url and not workspace_id and not project_name:
+        return nullcontext()
+
+    if not project_name:
+        project_name = "openai_wrapper"
+
+    client_kwargs = {}
+    if api_key:
+        client_kwargs["api_key"] = api_key
+    if api_url:
+        client_kwargs["api_url"] = api_url
+    if workspace_id:
+        client_kwargs["workspace_id"] = workspace_id
+
+    client = Client(**client_kwargs) if client_kwargs else None
+
+    return tracing_v2_enabled(project_name=project_name, client=client)
 
 def _delete_all_threads_fast(checkpointer) -> bool:
     """Fast-path delete for Postgres-backed checkpointers."""
@@ -93,10 +125,11 @@ def chat(req: ChatRequest):
     config: RunnableConfig = _make_config(req.thread_id, req)
 
     try:
-        result = graph.invoke(
-            {"messages": [HumanMessage(content=req.message)]},
-            config=config,
-        )
+        with _langsmith_context(req):
+            result = graph.invoke(
+                {"messages": [HumanMessage(content=req.message)]},
+                config=config,
+            )
         reply = _extract_content(result["messages"][-1])
         return ChatResponse(reply=reply, thread_id=req.thread_id)
     except Exception as exc:
@@ -136,16 +169,17 @@ def chat_stream(req: ChatRequest):
     config: RunnableConfig = _make_config(req.thread_id, req)
 
     def token_generator():
-        for event in graph.stream(
-            {"messages": [HumanMessage(content=req.message)]},
-            config=config,
-            stream_mode="messages",
-        ):
-            # stream_mode="messages" yields (message_chunk, metadata) tuples
-            message_chunk, _ = event if isinstance(event, tuple) else (event, {})
-            token = getattr(message_chunk, "content", "")
-            if token:
-                yield token
+        with _langsmith_context(req):
+            for event in graph.stream(
+                {"messages": [HumanMessage(content=req.message)]},
+                config=config,
+                stream_mode="messages",
+            ):
+                # stream_mode="messages" yields (message_chunk, metadata) tuples
+                message_chunk, _ = event if isinstance(event, tuple) else (event, {})
+                token = getattr(message_chunk, "content", "")
+                if token:
+                    yield token
 
     return StreamingResponse(token_generator(), media_type="text/plain")
 
