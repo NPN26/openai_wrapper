@@ -17,17 +17,20 @@ export default function Home() {
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
   const [threadId, setThreadId] = useState(() => crypto.randomUUID());
   const [chatsRefreshKey, setChatsRefreshKey] = useState(0);
+  const [canCloseSettings, setCanCloseSettings] = useState(false);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
 
     if (!validated) {
       // require valid settings before sending messages
+      setCanCloseSettings(false);
       setShowSettings(true);
       return;
     }
 
     if (!chatConfig) {
+      setCanCloseSettings(false);
       setShowSettings(true);
       return;
     }
@@ -94,6 +97,7 @@ export default function Home() {
     setChatConfig(cfg);
     setValidated(true);
     setShowSettings(false);
+    setCanCloseSettings(false);
   };
 
   const handleNewChat = () => {
@@ -144,10 +148,26 @@ export default function Home() {
     }
   };
 
+  const handleOpenSettings = () => {
+    setCanCloseSettings(true);
+    setShowSettings(true);
+  };
+
+  const handleCancelSettings = () => {
+    setShowSettings(false);
+    setCanCloseSettings(false);
+  };
+
   if (!validated) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <SettingsModal open={showSettings} onValidated={handleValidated} />
+        <SettingsModal
+          open={showSettings}
+          onValidated={handleValidated}
+          onCancel={handleCancelSettings}
+          allowClose={canCloseSettings}
+          initialConfig={chatConfig}
+        />
         <p className="text-muted-foreground">Please configure your settings to continue.</p>
       </div>
     );
@@ -162,10 +182,22 @@ export default function Home() {
         refreshKey={chatsRefreshKey}
       />
 
-      <SettingsModal open={showSettings} onValidated={handleValidated} />
+      <SettingsModal
+        open={showSettings}
+        onValidated={handleValidated}
+        onCancel={handleCancelSettings}
+        allowClose={canCloseSettings}
+        initialConfig={chatConfig}
+      />
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
+        <div className="flex items-center justify-between border-b px-6 py-3">
+          <div className="text-sm font-semibold text-muted-foreground">Chat</div>
+          <Button variant="outline" size="sm" onClick={handleOpenSettings}>
+            Edit API Settings
+          </Button>
+        </div>
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 ? (

@@ -1,15 +1,26 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 
+type ChatConfig = { apiKey: string; baseUrl: string; model: string };
+
 type Props = {
   open: boolean;
-  onValidated: (cfg: { apiKey: string; baseUrl: string; model: string }) => void;
+  onValidated: (cfg: ChatConfig) => void;
+  onCancel?: () => void;
+  allowClose?: boolean;
+  initialConfig?: ChatConfig | null;
 };
 
-export function SettingsModal({ open, onValidated }: Props) {
+export function SettingsModal({
+  open,
+  onValidated,
+  onCancel,
+  allowClose = false,
+  initialConfig,
+}: Props) {
   const defaultBaseUrl = "https://api.openai.com/v1";
   const defaultModel = "gpt-4.1";
   const [apiKey, setApiKey] = useState("");
@@ -17,6 +28,14 @@ export function SettingsModal({ open, onValidated }: Props) {
   const [model, setModel] = useState(defaultModel);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setApiKey(initialConfig?.apiKey ?? "");
+    setBaseUrl(initialConfig?.baseUrl ?? defaultBaseUrl);
+    setModel(initialConfig?.model ?? defaultModel);
+    setError(null);
+  }, [open, initialConfig, defaultBaseUrl, defaultModel]);
 
   const submit = async () => {
     setError(null);
@@ -65,6 +84,11 @@ export function SettingsModal({ open, onValidated }: Props) {
     }
   };
 
+  const handleCancel = () => {
+    setError(null);
+    onCancel?.();
+  };
+
   if (!open) return null;
 
   return (
@@ -95,6 +119,11 @@ export function SettingsModal({ open, onValidated }: Props) {
           {error && <div className="text-sm text-destructive">{error}</div>}
 
           <div className="flex justify-end gap-2 mt-2">
+            {allowClose && (
+              <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
+                Cancel
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => {
               // Clear in-memory form fields and keep modal open.
               setApiKey("");

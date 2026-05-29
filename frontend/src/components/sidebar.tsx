@@ -107,11 +107,11 @@ export function Sidebar({
         + New Chat
       </Button>
       <div className="flex-1 overflow-y-auto space-y-2">
-        <div className="text-sm font-semibold text-muted-foreground px-2">
-          Recent
+        <div className="flex items-center justify-between gap-3 px-2">
+          <div className="text-sm font-semibold text-muted-foreground">Recent</div>
           <ConfirmDeleteDialog onConfirm={deleteChats} title="Delete all chats?" description="Are you sure you want to delete all chats? This action cannot be undone.">
             <button
-              className="group-hover:opacity-100 p-1 rounded-md bg-destructive text-white hover:bg-destructive/20 hover:text-destructive transition-all"
+              className="p-1 rounded-md bg-destructive text-white hover:bg-destructive/20 hover:text-destructive transition-all"
               aria-label="Delete all chats"
             >
               Delete all Chats
