@@ -3,16 +3,17 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sidebar } from "@/components/sidebar";
+import { MessagesContainer } from "@/components/messages-container";
+import type { ChatMessage } from "@/components/messages-container";
 import SettingsModal from "@/components/settings-modal";
 import LangsmithSettingsModal, {
   LangsmithConfig,
 } from "@/components/langsmith-settings-modal";
 
-type Message = { role: "user" | "assistant"; content: string };
 type ChatConfig = { apiKey: string; baseUrl: string; model: string };
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
@@ -123,7 +124,7 @@ export default function Home() {
   const loadChatHistory = async (id: string) => {
     try {
       const res = await fetch(`/api/chat/${id}/history`);
-      const data = (await res.json()) as Message[];
+      const data = (await res.json()) as ChatMessage[];
 
       if (!res.ok) {
         throw new Error("Failed to load chat history");
@@ -239,45 +240,7 @@ export default function Home() {
             Edit API Settings
           </Button>
         </div>
-        {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-center">
-              <div className="max-w-md">
-                <h1 className="text-3xl font-bold mb-2">Chat</h1>
-                <p className="text-muted-foreground">
-                  Start a conversation by typing a message below
-                </p>
-              </div>
-            </div>
-          ) : (
-            messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  m.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-md px-4 py-2 rounded-lg ${
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
-                >
-                  <p className="text-sm">{m.content}</p>
-                </div>
-              </div>
-            ))
-          )}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-muted px-4 py-2 rounded-lg">
-                <p className="text-sm">Thinking...</p>
-              </div>
-            </div>
-          )}
-        </div>
+        <MessagesContainer messages={messages} isLoading={isLoading} />
 
         {/* Input Area */}
         <div className="border-t p-4 bg-background flex justify-center">

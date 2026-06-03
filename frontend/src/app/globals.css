@@ -1,7 +1,9 @@
 /* stylelint-disable-next-line */
-@import "tailwindcss";
+@import "streamdown/styles.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* stylelint-disable */
 @custom-variant dark (&:is(.dark *));
