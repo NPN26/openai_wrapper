@@ -31,3 +31,39 @@ guardrail: |
   - 0.5 = greeting / pleasantry / ambiguous but plausibly financial
   - < 0.25 = clearly outside the financial domain (will be routed to guardrail)
 
+history: |
+  You are the setup + routing classifier for a financial analytics AI assistant. Classify as follow-up ONLY if the current query depends on a prior result.
+
+  For the current user query, you must decide "does the current query depend on prior conversation turns"?
+
+  Strong signals:
+  - Direct references: "this", "that", "these", "those", "this table", "the data", "those results"
+  - Transformations of prior results: "only overdue", "top 5", "group by customer", "sort by amount"
+  - Analytical continuation: "break this down", "drill into this", "compare with last month"
+  - Visualization requests against prior data: "plot this", "chart this", "visualize this"
+  - Elliptical queries that are meaningless without prior context
+
+  CRITICAL: if the query modifies, filters, aggregates, or visualizes a previously returned result, is_follow_up MUST be true.
+
+  Not a follow-up:
+  - Self-contained query on a new metric, entity, or dataset
+  - Same topic as before but answerable from scratch — "same topic" does not imply follow-up
+
+  ---
+
+  ## TURN SELECTION (only when is_follow_up = true)
+
+  Rules:
+  - Indices must match the "index=" values shown in the history block. Never invent indices.
+  - Prefer the MINIMUM number of turns. Most follow-ups reference a single turn.
+  - Prefer the most recent relevant turn; prefer turns that carried tables or charts.
+  - Hard cap: 3 turns.
+  - If uncertain, set is_follow_up = false and referenced_turn_indices = [].
+
+  Conversation History
+  {history_block}
+
+  ---
+
+  Current Query
+  {current_query}

@@ -5,10 +5,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel
-from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, FINANCIAL_DOMAINS
+from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, HISTORY_PROMPT, FINANCIAL_DOMAINS
 
 class State(TypedDict):
     messages: Annotated[list[AIMessage | HumanMessage], add_messages]
+    is_follow_up: Optional[bool]
+    referenced_turn_indices: Optional[list[int]]
     financial_domain: Optional[FINANCIAL_DOMAINS]
     domain_confidence: Optional[float]
     reasoning: Optional[str]
@@ -17,6 +19,10 @@ class GuardrailOutput(BaseModel):
     financial_domain: FINANCIAL_DOMAINS
     domain_confidence: float
     reasoning: str
+    
+class HistoryOutput(BaseModel):
+    is_follow_up: bool
+    referenced_turn_indices: list[int]
         
 model = init_chat_model(
     temperature=0.5,
@@ -36,7 +42,7 @@ def guardrail_node(state: State, config: RunnableConfig) -> State:
     
     # Invoke the model with the guardrail prompt and current messages
     result = structured_llm.invoke(
-        [SystemMessage(content=GUARDRAIL_PROMPT)] + state["messages"], 
+        [SystemMessage(content=GUARDRAIL_PROMPT), state["messages"][-1]], 
         config=config
     )
     return {
@@ -52,34 +58,84 @@ def guardrail_end_node(state: State) -> State:
     return {
         "messages": state["messages"] + [AIMessage(content="Sorry, I can only assist with financial queries.")]
     }
+    
+def history_node(state: State, config: RunnableConfig) -> State:
+    """
+    Node to determine if the current query is a follow-up that depends on prior conversation turns.
+    If so, it identifies which turns are relevant to provide context to the agent.
+    """
+    # Bind the Pydantic schema to the model to force structured output
+    structured_llm = model.with_structured_output(HistoryOutput)
+    
+    # Prepare the conversation history block for the prompt
+    history_block = "\n".join(
+        f"Turn {i}: {msg.content}" for i, msg in enumerate(state["messages"])
+    )
+    
+    # Invoke the model with the history prompt, current messages, and conversation history
+    result = structured_llm.invoke(
+        [SystemMessage(content=HISTORY_PROMPT.format(history_block=history_block, current_query=state["messages"][-1].content))] + state["messages"], 
+        config=config
+    )
+    
+    # Update the state with any relevant information about follow-up status or referenced turns
+    return {
+        "is_follow_up": result.is_follow_up,
+        "referenced_turn_indices": result.referenced_turn_indices
+    }
         
 
-def decide_next_node(guardrail_output: GuardrailOutput) -> bool:
+def decide_next_node(state: State) -> bool:
     """
     Decides the next node based on the guardrail output.
     If the confidence is above a certain threshold, proceed to the agent node.
     Otherwise, end the graph execution.
     """
-    if guardrail_output.domain_confidence <= 0.25:
+    if (state.get("domain_confidence") or 0) <= 0.25:
         return False
     else:
         return True
 
 def call_model(state: State, config: RunnableConfig) -> State:
-    response = model.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"], config=config)
+    if state.get("is_follow_up") and state.get("referenced_turn_indices"):
+        # If it's a follow-up, we can choose to include the referenced turns in the prompt, which includes the user prompt and response
+        referenced_messages = [
+            msg
+            for i in state["referenced_turn_indices"]
+            if 0 <= i < len(state["messages"])
+            for msg in (
+                [state["messages"][i]]
+                + (
+                    [state["messages"][i + 1]]
+                    if i + 1 < len(state["messages"])
+                    and isinstance(state["messages"][i + 1], AIMessage)
+                    else []
+                )
+            )
+        ]
+        # Filter: System Prompt + Only relevant history + Current user message
+        prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + referenced_messages + [state["messages"][-1]]
+    else:
+        # If not a follow-up, only send the System Prompt and the current user message
+        prompt_messages = [SystemMessage(content=SYSTEM_PROMPT), state["messages"][-1]]
+    response = model.invoke(prompt_messages, config=config)
     return {"messages": [response]}
     
 builder = StateGraph(State)
 builder.add_node("guardrail", guardrail_node)
 builder.add_node("guardrail_end", guardrail_end_node)
 builder.add_node("agent", call_model)
+builder.add_node("history", history_node)
 builder.set_entry_point("guardrail")
 builder.add_conditional_edges(
     "guardrail", 
     decide_next_node, 
-    {False: "guardrail_end", True: "agent"})
+    {   False: "guardrail_end", 
+        True: "history"
+})
 builder.add_edge("guardrail_end", END)
 builder.add_edge("agent", END)
+builder.add_edge("history", "agent")
 
 _graph = None
 _pool = None
