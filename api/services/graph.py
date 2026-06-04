@@ -11,10 +11,12 @@ class State(TypedDict):
     messages: Annotated[list[AIMessage | HumanMessage], add_messages]
     financial_domain: Optional[FINANCIAL_DOMAINS]
     domain_confidence: Optional[float]
+    reasoning: Optional[str]
     
 class GuardrailOutput(BaseModel):
     financial_domain: FINANCIAL_DOMAINS
     domain_confidence: float
+    reasoning: str
         
 model = init_chat_model(
     temperature=0.5,
@@ -39,7 +41,8 @@ def guardrail_node(state: State, config: RunnableConfig) -> State:
     )
     return {
         "financial_domain": result.financial_domain, 
-        "domain_confidence": result.domain_confidence
+        "domain_confidence": result.domain_confidence,
+        "reasoning": result.reasoning
     }
     
 def guardrail_end_node(state: State) -> State:
