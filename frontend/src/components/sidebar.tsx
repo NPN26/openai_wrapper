@@ -102,7 +102,7 @@ export function Sidebar({
   }, [refreshKey]);
 
   return (
-    <div className="w-64 border-r bg-muted/50 flex flex-col p-4">
+    <div className="w-64 h-full overflow-hidden border-r bg-muted/50 flex flex-col p-4">
       <Button variant="outline" className="w-full mb-4" onClick={onNewChat}>
         + New Chat
       </Button>
