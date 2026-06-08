@@ -74,7 +74,7 @@ def history_node(state: State, config: RunnableConfig) -> State:
     
     # Invoke the model with the history prompt, current messages, and conversation history
     result = structured_llm.invoke(
-        [SystemMessage(content=HISTORY_PROMPT.format(history_block=history_block, current_query=state["messages"][-1].content))] + state["messages"], 
+        [SystemMessage(content=HISTORY_PROMPT.format(history_block=history_block, current_query=state["messages"][-1].content))], 
         config=config
     )
     
