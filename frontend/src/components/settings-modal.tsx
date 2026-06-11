@@ -3,6 +3,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type ChatConfig = { apiKey: string; baseUrl: string; model: string };
 
@@ -114,10 +121,15 @@ export function SettingsModal({
           />
 
           <label className="text-sm text-muted-foreground">Model / Deployment</label>
-          <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
+            <Select value={model} onValueChange={(value) => value && setModel(value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
+                <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
+              </SelectContent>
+            </Select>
 
           {error && <div className="text-sm text-destructive">{error}</div>}
 
