@@ -26,6 +26,16 @@ def _candidate_model_urls(base_url: str) -> list[str]:
         azure_base = base[: -len("/openai/v1")] + "/openai"
         urls.append(f"{azure_base}/models")
 
+    # Additional Azure AI Foundry project patterns
+    if ".services.ai.azure.com" in base:
+        # If URL contains project path segments, attempt to find the models list at the project root
+        if "/openai/v1" in base:
+            project_root = base.split("/openai/v1")[0]
+            urls.append(f"{project_root}/models")
+        elif "/openai" in base:
+            project_root = base.split("/openai")[0]
+            urls.append(f"{project_root}/models")
+
     # De-duplicate while preserving order.
     seen: set[str] = set()
     unique_urls: list[str] = []
@@ -38,7 +48,11 @@ def _candidate_model_urls(base_url: str) -> list[str]:
 def check_api_key(api_key: str, base_url: str = OPENAI_BASE_URL) -> tuple[bool, str]:
     headers_to_try: list[dict[str, str]]
     if _is_azure_endpoint(base_url):
-        headers_to_try = [{"api-key": api_key}]
+        # Azure AI Foundry projects can sometimes require Bearer tokens or api-keys
+        headers_to_try = [
+            {"api-key": api_key},
+            {"Authorization": f"Bearer {api_key}"}
+        ]
     else:
         headers_to_try = [
             {"Authorization": f"Bearer {api_key}"},

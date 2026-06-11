@@ -3,6 +3,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type ChatConfig = { apiKey: string; baseUrl: string; model: string };
 
@@ -49,15 +56,19 @@ export function SettingsModal({
         body: JSON.stringify({ api_key: apiKey, base_url: normalizedBaseUrl }),
       });
 
-      const raw = await res.text();
+      const contentType = res.headers.get("content-type");
       let data: { valid?: boolean; message?: string; detail?: string } = {};
-      if (raw) {
-        try {
-          data = JSON.parse(raw) as { valid?: boolean; message?: string; detail?: string };
-        } catch {
-          if (!res.ok) {
-            throw new Error(raw);
+
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const raw = await res.text();
+        if (!res.ok) {
+          // Handle cases where the server returns an HTML error page (like a 500)
+          if (raw.includes("<!DOCTYPE") || raw.includes("<html")) {
+            throw new Error(`Backend Error (${res.status}): The API server is unreachable or failed to start. Check your BACKEND_URL and DB settings.`);
           }
+          throw new Error(raw || `Error ${res.status}`);
         }
       }
 
@@ -65,7 +76,6 @@ export function SettingsModal({
         throw new Error(
           data.detail ||
           data.message ||
-          raw ||
           `Validation failed with status ${res.status}`,
         );
       }
@@ -111,10 +121,15 @@ export function SettingsModal({
           />
 
           <label className="text-sm text-muted-foreground">Model / Deployment</label>
-          <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
+            <Select value={model} onValueChange={(value) => value && setModel(value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
+                <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
+              </SelectContent>
+            </Select>
 
           {error && <div className="text-sm text-destructive">{error}</div>}
 
