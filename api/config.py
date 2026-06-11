@@ -31,6 +31,8 @@ DEFAULT_MODEL = "gpt-4.1"
 SYSTEM_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["system"]
 GUARDRAIL_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["guardrail"]
 HISTORY_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["history"]
+SQL_PLAN_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["sql_plan"]
+SQL_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["sql_query"]
 FINANCIAL_DOMAINS = Literal[
     "Accounts Payable",
     "Accounts Receivable",
