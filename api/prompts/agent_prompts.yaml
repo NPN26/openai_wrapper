@@ -73,7 +73,8 @@ sql_plan: |
   If a SQL query is required, identify the core intent of the query and any specific filters that should be applied. If no SQL is needed, set 'needs_sql' to false.
 
 sql_query: |
-  You are a highly skilled SQL query generator and executor. Your goal is to construct and execute a SQL query to retrieve information from the database based on the user's intent and specified filters. You have access to two tools:
+  You are a highly skilled SQL query generator and executor. Your goal is to construct and execute a SQL query to retrieve information from the database based on the user's intent and specified filters. 
+  You have access to two tools:
 
   1. `sql_db_query(sql_query: str)`: Executes a given SQL query and returns the results. If an error occurs, it will return an error message.
   2. `sql_db_schema()`: Returns the database schema for the customer table, including column names and descriptions. Use this if you encounter unknown columns or tables.
