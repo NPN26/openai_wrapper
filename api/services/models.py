@@ -99,16 +99,25 @@ class Customers(SQLModel, table=True):
 
 def get_schema() -> str:
     """
-    Generates a text representation of the Customer table schema, 
+    Generates a text representation of all SQLModel table schemas, 
     including column descriptions for the AI agent to use.
     """
-    schema_desc = f"Table: {Customers.__tablename__}\n"
-    schema_desc += f"Context: {Customers.__table_args__['comment']}\n\nColumns:\n"
-    
-    # Iterate through the model fields to build a documentation string
-    for name, field in Customers.model_fields.items():
-        comment = field.description or "No description available"
-        field_type = str(field.annotation).replace("<class '", "").replace("'>", "")
-        schema_desc += f"- {name} ({field_type}): {comment}\n"
+    all_schemas = []
+    # Iterate over all models registered in SQLModel
+    for model in SQLModel.__subclasses__():
+        if getattr(model, "__table__", None) is None:
+            continue
+            
+        table_name = getattr(model, "__tablename__", model.__name__.lower())
+        comment = model.__table_args__.get("comment", "No context available") if hasattr(model, "__table_args__") else "No context available"
         
-    return schema_desc
+        schema_desc = f"Table: {table_name}\nContext: {comment}\nColumns:\n"
+        
+        for name, field in model.model_fields.items():
+            desc = field.description or "No description available"
+            field_type = str(field.annotation).replace("<class '", "").replace("'>", "")
+            schema_desc += f"- {name} ({field_type}): {desc}\n"
+        
+        all_schemas.append(schema_desc)
+        
+    return "\n---\n".join(all_schemas)
