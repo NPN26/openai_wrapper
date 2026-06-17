@@ -1,5 +1,5 @@
 ## models.py
-from sqlmodel import SQLModel, Field, JSON
+from sqlmodel import SQLModel, Field, JSON, Session, select, func
 from datetime import datetime, date
 from typing import Optional, List, Any
 
@@ -97,12 +97,14 @@ class Customers(SQLModel, table=True):
 
     acquisition_date: Optional[datetime] = Field(default=None, description="Date when the customer relationship was established.")
 
-def get_schema() -> str:
+def get_schema(session: Session) -> str:
     """
     Generates a text representation of all SQLModel table schemas, 
     including column descriptions for the AI agent to use.
+    Filters out columns that have no non-null values in the database rows.
     """
     all_schemas = []
+    
     # Iterate over all models registered in SQLModel
     for model in SQLModel.__subclasses__():
         if getattr(model, "__table__", None) is None:
@@ -112,12 +114,39 @@ def get_schema() -> str:
         comment = model.__table_args__.get("comment", "No context available") if hasattr(model, "__table_args__") else "No context available"
         
         schema_desc = f"Table: {table_name}\nContext: {comment}\nColumns:\n"
+        has_populated_columns = False
         
-        for name, field in model.model_fields.items():
-            desc = field.description or "No description available"
-            field_type = str(field.annotation).replace("<class '", "").replace("'>", "")
-            schema_desc += f"- {name} ({field_type}): {desc}\n"
+        field_names = list(model.model_fields.keys())
+        if not field_names:
+            continue
+            
+        # OPTIMIZATION: Use a single query per table to count non-null values for all columns.
+        # In SQL, COUNT(column_name) intrinsically ignores NULL values.
+        counts_stmt = select(
+            *[func.count(getattr(model, name)).label(name) for name in field_names]
+        )
         
-        all_schemas.append(schema_desc)
+        # Execute the query. 
+        # Note: Even if the table is completely empty, aggregate functions without GROUP BY 
+        # safely return a single row of zeros, so .one() will not throw an error.
+        result = session.exec(counts_stmt).one()
         
+        for name in field_names:
+            # Get the non-null count for the specific column
+            non_null_count = getattr(result, name)
+            
+            # Only include the column if it has at least 1 non-null value
+            if non_null_count > 0:
+                has_populated_columns = True
+                field = model.model_fields[name]
+                desc = field.description or "No description available"
+                field_type = str(field.annotation).replace("<class '", "").replace("'>", "")
+                schema_desc += f"- {name} ({field_type}): {desc}\n"
+                
+        if has_populated_columns:
+            all_schemas.append(schema_desc)
+        else:
+            # Handle tables that exist but have no data or only entirely null columns
+            all_schemas.append(f"Table: {table_name}\nContext: {comment}\nColumns: (No populated columns found)\n")
+            
     return "\n---\n".join(all_schemas)

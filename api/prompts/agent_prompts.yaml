@@ -59,8 +59,9 @@ guardrail: |
   - 0.2: Borderline. Contains financial keywords but the core intent is clearly non-financial.
   - 0.0: Completely out of domain, malicious, or unrelated to corporate finance/business analytics.
 
-rewriter: |
-  You are an expert conversational context analyzer and query rewriter for a financial AI assistant. Your goal is to transform a user's latest message into a fully self-contained, unambiguous query that can be executed by a downstream SQL-generating agent without needing the conversation history.
+follow_up: |
+  You are an expert conversational context analyzer for a financial AI assistant. 
+  Your goal is to determine if a user's latest message is a follow-up question that requires context from previous conversation turns.
 
   ### Context
   Below is the conversation history. Each turn is indexed by a number (Turn 0, Turn 1, etc.).
@@ -76,48 +77,30 @@ rewriter: |
   2. **Determine if Follow-Up (`is_follow_up`)**: 
     - `True`: If the query depends on previous turns to be fully understood.
     - `False`: If the query is completely standalone and introduces a new, fully specified topic.
-  3. **Identify Referenced Turns (`referenced_turn_indices`)**: 
-    - If `is_follow_up` is True, provide a list of the integer indices of the *previous* historical turns that contain the necessary context. Do not include the index of the Current User Query itself.
-    - If `is_follow_up` is False, provide an empty list `[]`.
-  4. **Rewrite the Query (`rewritten_query`)**: 
-    - If `is_follow_up` is True, rewrite the query by explicitly incorporating the relevant entities, metrics, timeframes, and conditions from the referenced turns. The rewritten query must be completely standalone and ready to be converted into a SQL query. (e.g., change "What was their revenue?" to "What was Apple Inc.'s total revenue for the fiscal year 2023?").
-    - If `is_follow_up` is False, simply return the current query (you may apply minor spelling/grammar corrections, but do not change the core intent).
 
   Provide your output strictly according to the required schema.
 
-history: |
-  You are the setup + routing classifier for a financial analytics AI assistant. Classify as follow-up ONLY if the current query depends on a prior result.
+rewriter: |
+  You are an expert query rewriter and context selector for a financial AI assistant.
+  You are provided with a follow-up query and the conversation history. Your goals are to select the necessary historical context and rewrite the query so it can be understood without the chat history.
 
-  For the current user query, you must decide "does the current query depend on prior conversation turns"?
-
-  Strong signals:
-  - Direct references: "this", "that", "these", "those", "this table", "the data", "those results"
-  - Transformations of prior results: "only overdue", "top 5", "group by customer", "sort by amount"
-  - Analytical continuation: "break this down", "drill into this", "compare with last month"
-  - Visualization requests against prior data: "plot this", "chart this", "visualize this"
-  - Elliptical queries that are meaningless without prior context
-
-  CRITICAL: if the query modifies, filters, aggregates, or visualizes a previously returned result, is_follow_up MUST be true.
-
-  Not a follow-up:
-  - Self-contained query on a new metric, entity, or dataset
-  - Same topic as before but answerable from scratch — "same topic" does not imply follow-up
-
-  ---
-
-  ## TURN SELECTION (only when is_follow_up = true)
-
-  Rules:
-  - Indices must match the "index=" values shown in the history block. Never invent indices.
-  - Prefer the MINIMUM number of turns. Most follow-ups reference a single turn.
-  - Prefer the most recent relevant turn; prefer turns that carried tables or charts.
-  - Hard cap: 3 turns.
-  - If uncertain, set is_follow_up = false and referenced_turn_indices = [].
-
-  Conversation History
+  # Context
+  Below is the conversation history. Each turn is indexed by a number (Turn 0, Turn 1, etc.).
+  
   {history_block}
 
-  ---
-
-  Current Query
+  # Current User Query
   {current_query}
+
+  # Instructions
+  1. **Turn Selection (`referenced_turn_indices`)**:
+     - Identify the MINIMUM number of historical turns required to provide context for the current query.
+     - Indices must exactly match the index values shown in the history block. Never invent indices.
+     - Prefer the most recent relevant turn; prefer turns that carried tables, charts, or specific data results.
+     - Hard cap: Maximum of 3 turns.
+
+  2. **Query Rewriting (`rewritten_query`)**:
+     - Rewrite the `{current_query}` into a fully standalone, self-contained question.
+     - Resolve all pronouns (it, they, this, that), implicit references, and elliptical phrases using the selected historical context.
+     - Ensure the rewritten query contains all necessary entities, metrics, and constraints so that an AI agent can answer it using *only* the rewritten query and the referenced turns.
+     - Do not answer the query; only rewrite it.

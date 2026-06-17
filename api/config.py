@@ -30,7 +30,8 @@ LANGSMITH_BASE_URL = "https://api.smith.langchain.com"
 DEFAULT_MODEL = "gpt-4.1"
 SYSTEM_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["system"]
 GUARDRAIL_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["guardrail"]
-HISTORY_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["history"]
+# HISTORY_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["history"]
+FOLLOW_UP_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["follow_up"]
 REWRITER_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["rewriter"]
 FINANCIAL_DOMAINS = Literal[
     "Accounts Payable",

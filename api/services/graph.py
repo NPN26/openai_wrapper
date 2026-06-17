@@ -10,7 +10,7 @@ from pydantic import BaseModel, json
 from sqlmodel import Session, select, text
 from api.database import engine
 from api.services.models import Customers, get_schema
-from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, HISTORY_PROMPT, REWRITER_PROMPT, FINANCIAL_DOMAINS
+from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, FOLLOW_UP_PROMPT, REWRITER_PROMPT, FINANCIAL_DOMAINS
 
 class State(TypedDict):
     messages: Annotated[list[AIMessage | HumanMessage], add_messages]
@@ -21,9 +21,11 @@ class State(TypedDict):
     reasoning: Optional[str]
     rewritten_query: Optional[str]
     
+class followUpNodeOutput(BaseModel):
+    is_follow_up: bool
+    
 class rewriterOutput(BaseModel):
     rewritten_query: str
-    is_follow_up: bool
     referenced_turn_indices: list[int]
     
 class GuardrailOutput(BaseModel):
@@ -67,7 +69,9 @@ def db_schema() -> str:
     This tool returns the database schema for the customer table, including column names and descriptions.
     Use this information to construct accurate SQL queries when the db_query tool returns errors related to unknown columns or tables.
     """
-    return get_schema()
+    with Session(engine) as session:
+        scheme_text = get_schema(session)
+        return scheme_text
 
 tools = [db_query, db_schema]
 
@@ -76,20 +80,31 @@ agent = create_agent(
     tools = tools
 )
 
-def rewriter_node(state: State, config: RunnableConfig) -> State:
+def follow_up_node(state: State, config: RunnableConfig) -> State:
     """
-    This node takes the current conversation history and the latest user query, 
-    and rewrites the query to be more explicit and self-contained if it's a follow-up question.
-    The agent will determine if the query is a follow-up and identify which previous turns are relevant for providing context. 
-    The output includes the rewritten query, a boolean indicating if it's a follow-up, 
-    and a list of indices of the referenced turns in the conversation history. 
+    This node determines if the user's current query is a follow-up question that requires context from previous conversation turns.
+    """
+    # Bind the Pydantic schema to the model to force structured output
+    structured_llm = model.with_structured_output(followUpNodeOutput)
+    
+    # Invoke the model with the rewriter prompt and the agent's error message
+    result = structured_llm.invoke(
+        [SystemMessage(content=FOLLOW_UP_PROMPT.format(history_block=state["messages"][:-1], current_query=state["messages"][-1].content))], 
+        config=config
+    )
+    
+    return {"is_follow_up": result.is_follow_up,}
+
+def history_and_rewriter_node(state: State, config: RunnableConfig) -> State:
+    """
+    This node combines the history and rewriter nodes to determine if the user's current query is a follow-up question that requires context from previous conversation turns.
     """
     # Bind the Pydantic schema to the model to force structured output
     structured_llm = model.with_structured_output(rewriterOutput)
     
     # Prepare the conversation history block for the prompt
     history_block = "\n".join(
-        f"Turn {i}: {msg.content}" for i, msg in enumerate(state["messages"])
+        f"Turn {(i // 2) + 1}: \n Human: {state['messages'][i].content} \n AI: {state['messages'][i+1].content}" for i in range(0, len(state["messages"]) - 1, 2)
     )
     
     # Invoke the model with the rewriter prompt and the agent's error message
@@ -98,9 +113,11 @@ def rewriter_node(state: State, config: RunnableConfig) -> State:
         config=config
     )
     
-    return {"rewritten_query": result.rewritten_query,
-            "is_follow_up": result.is_follow_up,
-            "referenced_turn_indices": result.referenced_turn_indices}
+    return {
+        "referenced_turn_indices": result.referenced_turn_indices,
+        "rewritten_query": result.rewritten_query
+    }
+    
 
 def guardrail_node(state: State, config: RunnableConfig) -> State:
     """
@@ -110,9 +127,12 @@ def guardrail_node(state: State, config: RunnableConfig) -> State:
     # Bind the Pydantic schema to the model to force structured output
     structured_llm = model.with_structured_output(GuardrailOutput)
     
-    # Invoke the model with the guardrail prompt and current messages
+    # Use rewritten query if it exists; otherwise, fall back to the original message content
+    query = state.get("rewritten_query") or state["messages"][-1].content
+
+    # Invoke the model with the guardrail prompt and the rewritten query
     result = structured_llm.invoke(
-        [SystemMessage(content=GUARDRAIL_PROMPT), state["messages"][-1]], 
+        [SystemMessage(content=GUARDRAIL_PROMPT), query], 
         config=config
     )
     return {
@@ -139,36 +159,42 @@ def decide_next_node(state: State) -> bool:
         return False
     else:
         return True
+    
+def is_first_turn(state: State) -> bool:
+    """
+    Determines if the current turn is the first turn in the conversation.
+    """
+    return len(state["messages"]) == 1
+
+def is_follow_up(state: State) -> bool:
+    """
+    Determines if the current turn is a follow-up turn based on the presence of previous messages.
+    """
+    return state.get("is_follow_up", False)
 
 def agent_node(state: State, config: RunnableConfig) -> State:
     prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)]
     
+    # Use the rewritten string if available, otherwise use the raw HumanMessage object
+    user_query = state.get("rewritten_query") or state["messages"][-1]
+
     # Add the selected history turns back into the prompt if it's a follow-up question. This allows the agent to have the necessary context to answer follow-up questions correctly.
     if state.get("is_follow_up") and state.get("referenced_turn_indices"):
         # If it's a follow-up, we can choose to include the referenced turns in the prompt, which includes the user prompt and response
         referenced_messages = [
             msg
             for i in state["referenced_turn_indices"]
-            if 0 <= i < len(state["messages"])
+            if 0 <= i < len(state["messages"])/2
             for msg in (
-                [state["messages"][i]]
-                + (
-                    [state["messages"][i + 1]]
-                    if i + 1 < len(state["messages"])
-                    and isinstance(state["messages"][i + 1], AIMessage)
-                    else []
-                )
+                [state["messages"][(i-1)*2]] + [state["messages"][(i-1)*2 + 1]]
             )
         ]
-        # Filter: System Prompt + Only relevant history + rewritten user prompt (which should be self-contained with necessary context)
-        prompt_messages += referenced_messages + [state["rewritten_query"]]
+        # Filter: System Prompt + Only relevant history +  user prompt (which should be self-contained with necessary context)
+        prompt_messages += referenced_messages + [user_query]
     else:
         # If not a follow-up, only send the System Prompt and the current user message
-        prompt_messages += [state["rewritten_query"]]
+        prompt_messages += [user_query]
 
-    # 1. Invoke the agent. It handles the tool-calling loop (SQL generation, execution, and retries).
-    # We append a JSON instruction because agent_model is bound to JSON mode.
-    # The agent should return a dictionary with the structured output.
     agent_response = agent.invoke(
         {"messages": prompt_messages},
         config=config
@@ -180,16 +206,37 @@ def agent_node(state: State, config: RunnableConfig) -> State:
 builder = StateGraph(State)
 builder.add_node("guardrail", guardrail_node)
 builder.add_node("guardrail_end", guardrail_end_node)
-builder.add_node("rewriter", rewriter_node)
+builder.add_node("follow_up", follow_up_node)
+builder.add_node("history_and_rewriter", history_and_rewriter_node)
 builder.add_node("agent", agent_node)
-builder.set_entry_point("rewriter")
+
+builder.add_conditional_edges(
+    START,
+    is_first_turn,
+    {
+        True: "guardrail",
+        False: "follow_up"
+    }
+)
+
 builder.add_conditional_edges(
     "guardrail", 
     decide_next_node, 
-    {   False: "guardrail_end", 
+    {   
+        False: "guardrail_end", 
         True: "agent"
-})
-builder.add_edge("rewriter", "guardrail")
+    }
+)
+
+builder.add_conditional_edges(
+    "follow_up", 
+    is_follow_up, 
+    {
+        True: "history_and_rewriter", 
+        False: "guardrail"
+    }
+)
+builder.add_edge("history_and_rewriter", "guardrail")
 builder.add_edge("guardrail_end", END)
 builder.add_edge("agent", END)
 
