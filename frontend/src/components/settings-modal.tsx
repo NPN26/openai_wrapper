@@ -121,15 +121,11 @@ export function SettingsModal({
           />
 
           <label className="text-sm text-muted-foreground">Model / Deployment</label>
-            <Select value={model} onValueChange={(value) => value && setModel(value)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
-                <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
-              </SelectContent>
-            </Select>
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            defaultValue={defaultModel}
+          />
 
           {error && <div className="text-sm text-destructive">{error}</div>}
 
