@@ -243,7 +243,7 @@ export default function Home() {
         <MessagesContainer messages={messages} isLoading={isLoading} />
 
         {/* Input Area */}
-        <div className="border-t p-4 bg-background flex justify-center">
+        <div className="border-t p-4 bg-background flex justify-center sticky bottom-0 z-10">
           <div className="flex gap-2 max-w-2xl w-full">
             <Input
               value={input}

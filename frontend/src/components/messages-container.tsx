@@ -97,13 +97,13 @@ export function MessagesContainer({
           </Message>
         )}
       </ConversationContent>
-      <ConversationDownload
+      {/* <ConversationDownload
         messages={messages.map((m, i) => ({
           id: i.toString(),
           role: m.role,
           content: m.content,
         })) as unknown as ConversationDownloadMessages}
-      />
+      /> */}
       <ConversationScrollButton />
     </Conversation>
   );

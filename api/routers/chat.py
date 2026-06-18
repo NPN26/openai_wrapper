@@ -1,3 +1,4 @@
+from datetime import datetime
 from contextlib import nullcontext
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -57,6 +58,9 @@ def _make_config(thread_id: str, req: ChatRequest) -> RunnableConfig:
             "model": req.model or DEFAULT_MODEL,
             "api_key": req.api_key,
             "base_url": req.base_url or OPENAI_BASE_URL,
+        },
+        "metadata": {
+            "created_at": datetime.now().isoformat()
         }
     }
 
@@ -193,18 +197,17 @@ def list_chats():
             return []
 
         seen: set[str] = set()
-        threads: list[str] = []
+        threads: list[dict] = []
         for item in checkpointer.list(None):
-            thread_id = (
-                item.config.get("configurable", {}).get("thread_id")
-                if isinstance(item.config, dict)
-                else None
-            )
+            config = item.config
+            thread_id = config.get("configurable", {}).get("thread_id") if isinstance(config, dict) else None
+
             if thread_id and thread_id not in seen:
                 seen.add(thread_id)
-                threads.append(thread_id)
+                created_at = item.metadata.get("created_at") if item.metadata else None
+                threads.append({"threadId": thread_id, "createdAt": created_at})
 
-        return [{"threadId": thread_id} for thread_id in threads if thread_id]
+        return threads
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     

@@ -17,6 +17,7 @@ import {
 interface ChatHistoryItem {
   threadId: string;
   title?: string;
+  createdAt?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -133,7 +134,12 @@ export function Sidebar({
                 onClick={() => onSelectChat(chat.threadId)}
                 className="flex-1 text-left px-3 py-2 truncate pr-10"
               >
-                {chat.title || `Chat ${chat.threadId.substring(0, 8)}`}
+                {chat.title || 
+                  (chat.createdAt 
+                    ? 'Chat ' + new Date(chat.createdAt).toLocaleString()
+                    : `Chat ${chat.threadId.substring(0, 8)}`
+                  )
+                }
               </button>
 
               <div className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity">
