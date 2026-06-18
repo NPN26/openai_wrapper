@@ -9,7 +9,7 @@ from langchain.tools import tool
 from pydantic import BaseModel, json
 from sqlmodel import Session, select, text
 from api.database import engine
-from api.services.models import Customers, get_schema
+from api.services.models import get_tables_summary, get_detailed_schema
 from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, FOLLOW_UP_PROMPT, REWRITER_PROMPT, FINANCIAL_DOMAINS
 
 class State(TypedDict):
@@ -64,16 +64,26 @@ def db_query(sql_query: str) -> str:
             return f"Error executing SQL query: {str(e)}"
         
 @tool
-def db_schema() -> str:
+def list_tables() -> str:
     """
-    This tool returns the database schema for the customer table, including column names and descriptions.
-    Use this information to construct accurate SQL queries when the db_query tool returns errors related to unknown columns or tables.
+    Returns a brief list of all available tables and their high-level descriptions.
+    Use this tool FIRST to identify which tables are relevant to the user's query 
+    before fetching detailed schemas.
+    """
+    return get_tables_summary()
+
+@tool
+def get_table_schema(table_names: list[str]) -> str:
+    """
+    Returns the detailed schema (columns, types, and descriptions) for specific tables.
+    Input is a list of table names. ONLY request tables that are relevant to the user's 
+    query to save tokens. Do not request all tables at once.
     """
     with Session(engine) as session:
-        scheme_text = get_schema(session)
-        return scheme_text
+        return get_detailed_schema(session, table_names)
 
-tools = [db_query, db_schema]
+# Update your tools list
+tools = [db_query, list_tables, get_table_schema]
 
 agent = create_agent(
     model = cast(Any,model), 

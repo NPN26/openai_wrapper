@@ -742,56 +742,78 @@ class Suppliers(SQLModel, table=True):
 
     updated_at: Optional[datetime] = Field(default=None, description="Timestamp when the supplier record was last updated.")
     
-def get_schema(session: Session) -> str:
+def get_tables_summary() -> str:
     """
-    Generates a text representation of all SQLModel table schemas, 
-    including column descriptions for the AI agent to use.
-    Filters out columns that have no non-null values in the database rows.
+    Utility: Returns a brief list of all available tables and their high-level descriptions.
+    Does not require a DB session since it only reads Python class definitions.
     """
-    all_schemas = []
-    
-    # Iterate over all models registered in SQLModel
+    tables_info = []
     for model in SQLModel.__subclasses__():
         if getattr(model, "__table__", None) is None:
             continue
             
         table_name = getattr(model, "__tablename__", model.__name__.lower())
-        comment = model.__table_args__.get("comment", "No context available") if hasattr(model, "__table_args__") else "No context available"
-        
-        schema_desc = f"Table: {table_name}\nContext: {comment}\nColumns:\n"
-        has_populated_columns = False
-        
+        comment = "No context"
+        if hasattr(model, "__table_args__") and isinstance(model.__table_args__, dict):
+            comment = model.__table_args__.get("comment", "No context")
+            
+        tables_info.append(f"- {table_name}: {comment}")
+    
+    return "Available tables:\n" + "\n".join(tables_info)
+
+
+def get_detailed_schema(session: Session, table_names: list[str]) -> str:
+    """
+    Utility: Returns detailed schema for specific tables, filtering out empty columns.
+    """
+    target_tables = {name.lower() for name in table_names}
+    all_schemas = []
+    
+    for model in SQLModel.__subclasses__():
+        if getattr(model, "__table__", None) is None:
+            continue
+            
+        table_name = getattr(model, "__tablename__", model.__name__.lower())
+        if table_name not in target_tables:
+            continue
+            
+        comment = "No context"
+        if hasattr(model, "__table_args__") and isinstance(model.__table_args__, dict):
+            comment = model.__table_args__.get("comment", "No context")
+            
         field_names = list(model.model_fields.keys())
         if not field_names:
             continue
             
-        # OPTIMIZATION: Use a single query per table to count non-null values for all columns.
-        # In SQL, COUNT(column_name) intrinsically ignores NULL values.
+        # Count non-nulls ONLY for the requested table
         counts_stmt = select(
             *[func.count(getattr(model, name)).label(name) for name in field_names]
         )
-        
-        # Execute the query. 
-        # Note: Even if the table is completely empty, aggregate functions without GROUP BY 
-        # safely return a single row of zeros, so .one() will not throw an error.
         result = session.exec(counts_stmt).one()
         
+        schema_desc = f"Table: {table_name} ({comment})\n"
+        has_populated_columns = False
+        
         for name in field_names:
-            # Get the non-null count for the specific column
             non_null_count = getattr(result, name)
-            
-            # Only include the column if it has at least 1 non-null value
             if non_null_count > 0:
                 has_populated_columns = True
                 field = model.model_fields[name]
-                desc = field.description or "No description available"
+                desc = field.description or ""
                 field_type = str(field.annotation).replace("<class '", "").replace("'>", "")
-                schema_desc += f"- {name} ({field_type}): {desc}\n"
                 
+                # Compact format
+                if desc and desc != "No description available":
+                    schema_desc += f"  - {name} ({field_type}): {desc}\n"
+                else:
+                    schema_desc += f"  - {name} ({field_type})\n"
+                    
         if has_populated_columns:
             all_schemas.append(schema_desc)
         else:
-            # Handle tables that exist but have no data or only entirely null columns
-            all_schemas.append(f"Table: {table_name}\nContext: {comment}\nColumns: (No populated columns found)\n")
+            all_schemas.append(f"Table: {table_name} ({comment}): (No populated columns)\n")
             
+    if not all_schemas:
+        return "No schemas found for the provided table names. Please check the table names using list_tables."
+        
     return "\n---\n".join(all_schemas)
