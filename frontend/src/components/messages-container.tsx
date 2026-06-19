@@ -7,7 +7,6 @@ import {
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
-  ConversationDownload,
 } from "@/components/ai-elements/conversation";
 import {
   Message,
@@ -20,9 +19,9 @@ import { CopyIcon } from "lucide-react";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
-type ConversationDownloadMessages = ComponentProps<
-  typeof ConversationDownload
->["messages"];
+// type ConversationDownloadMessages = ComponentProps<
+//   typeof ConversationDownload
+// >["messages"];
 
 type MessagesContainerProps = {
   messages: ChatMessage[];

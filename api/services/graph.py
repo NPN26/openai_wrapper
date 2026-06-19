@@ -97,13 +97,22 @@ def follow_up_node(state: State, config: RunnableConfig) -> State:
     # Bind the Pydantic schema to the model to force structured output
     structured_llm = model.with_structured_output(followUpNodeOutput)
     
+    history_block = "\n".join(
+        f"{'Human' if isinstance(msg, HumanMessage) else 'AI'}: {msg.content}"
+        for msg in state["messages"][:-1]
+    )
+    
     # Invoke the model with the rewriter prompt and the agent's error message
     result = structured_llm.invoke(
-        [SystemMessage(content=FOLLOW_UP_PROMPT.format(history_block=state["messages"][:-1], current_query=state["messages"][-1].content))], 
+        [SystemMessage(content=FOLLOW_UP_PROMPT.format(history_block=history_block, current_query=state["messages"][-1].content))], 
         config=config
     )
     
-    return {"is_follow_up": result.is_follow_up,}
+    return {        
+        "is_follow_up": result.is_follow_up,
+        "rewritten_query": None,
+        "referenced_turn_indices": None
+    }
 
 def history_and_rewriter_node(state: State, config: RunnableConfig) -> State:
     """
@@ -194,7 +203,7 @@ def agent_node(state: State, config: RunnableConfig) -> State:
         referenced_messages = [
             msg
             for i in state["referenced_turn_indices"]
-            if 0 <= i < len(state["messages"])/2
+            if 1 <= i <= len(state["messages"])//2
             for msg in (
                 [state["messages"][(i-1)*2]] + [state["messages"][(i-1)*2 + 1]]
             )
