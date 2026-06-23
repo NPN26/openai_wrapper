@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { ComponentProps, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sidebar } from "@/components/sidebar";
@@ -121,6 +121,10 @@ export default function Home() {
     setMessages([]);
     setThreadId(crypto.randomUUID());
   };
+
+  type ConversationDownloadMessages = ComponentProps<
+    typeof ConversationDownload
+  >["messages"];
 
   const loadChatHistory = async (id: string) => {
     try {
