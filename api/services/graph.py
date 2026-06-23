@@ -1,16 +1,19 @@
 from typing import TypedDict, Annotated, Optional, Any, cast
-from langchain.agents import create_agent
+from langchain.agents import create_agent, AgentState
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from pydantic import BaseModel, json
 from sqlmodel import Session, select, text
 from api.database import engine
 from api.services.models import get_tables_summary, get_detailed_schema
-from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, FOLLOW_UP_PROMPT, REWRITER_PROMPT, FINANCIAL_DOMAINS
+from api.config import settings, SYSTEM_PROMPT, GUARDRAIL_PROMPT, FOLLOW_UP_PROMPT, REWRITER_PROMPT, COMPRESSOR_PROMPT, FINANCIAL_DOMAINS
+
+class CustomAgentState(AgentState):
+    financial_facts: Optional[list[str]]
 
 class State(TypedDict):
     messages: Annotated[list[AIMessage | HumanMessage], add_messages]
@@ -20,6 +23,7 @@ class State(TypedDict):
     domain_confidence: Optional[float]
     reasoning: Optional[str]
     rewritten_query: Optional[str]
+    financial_facts: Optional[list[str]]
     
 class followUpNodeOutput(BaseModel):
     is_follow_up: bool
@@ -32,6 +36,9 @@ class GuardrailOutput(BaseModel):
     financial_domain: FINANCIAL_DOMAINS
     domain_confidence: float
     reasoning: str
+    
+class CompressorOutput(BaseModel):
+    financial_facts: list[str]
 
 model = init_chat_model(
     temperature=0.5,
@@ -81,13 +88,26 @@ def get_table_schema(table_names: list[str]) -> str:
     """
     with Session(engine) as session:
         return get_detailed_schema(session, table_names)
+    
+@tool
+def recall_financial_facts(runtime: ToolRuntime[CustomAgentState]) -> str:
+    """
+    Returns a summary of all financial facts that have been recorded in the current conversation.
+    """
+    state = cast(CustomAgentState, runtime.state)
+    financial_facts = state.get("financial_facts")
+    if not financial_facts:
+        return "No financial facts have been recorded in this conversation."
+    else:
+        return "\n".join(financial_facts)
 
 # Update your tools list
-tools = [db_query, list_tables, get_table_schema]
+tools = [db_query, list_tables, get_table_schema, recall_financial_facts]
 
 agent = create_agent(
     model = cast(Any,model), 
-    tools = tools
+    tools = tools,
+    state_schema=CustomAgentState
 )
 
 def follow_up_node(state: State, config: RunnableConfig) -> State:
@@ -121,9 +141,14 @@ def history_and_rewriter_node(state: State, config: RunnableConfig) -> State:
     # Bind the Pydantic schema to the model to force structured output
     structured_llm = model.with_structured_output(rewriterOutput)
     
+    MAX_HISTORY_TURNS = 7
+    history_messages = state["messages"][-(MAX_HISTORY_TURNS * 2 + 1):-1]
+    num_complete_turns = len(history_messages) // 2
+    history_messages = history_messages[:num_complete_turns*2]  # Get the last N turns (user + agent)
+    
     # Prepare the conversation history block for the prompt
     history_block = "\n".join(
-        f"Turn {(i // 2) + 1}: \n Human: {state['messages'][i].content} \n AI: {state['messages'][i+1].content}" for i in range(0, len(state["messages"]) - 1, 2)
+        f"Turn {(i // 2) + 1}: \n Human: {history_messages[i].content} \n AI: {history_messages[i+1].content}" for i in range(0, len(history_messages), 2)
     )
     
     # Invoke the model with the rewriter prompt and the agent's error message
@@ -215,11 +240,46 @@ def agent_node(state: State, config: RunnableConfig) -> State:
         prompt_messages += [user_query]
 
     agent_response = agent.invoke(
-        {"messages": prompt_messages},
+        {"messages": prompt_messages, "financial_facts": state.get("financial_facts", [])},
         config=config
     )
 
     return {"messages":[agent_response["messages"][-1]]}
+
+def compressor_node(state: State, config: RunnableConfig) -> dict:
+    """
+    Runs AFTER the agent to update the financial facts ledger.
+    """
+    latest_human_message = next((msg for msg in reversed(state["messages"]) if isinstance(msg, HumanMessage)), None)
+    latest_ai_message = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
+    
+    if not latest_human_message or not latest_ai_message:
+        return {
+            "domain_summary": state.get("domain_summary", {}),
+            "financial_facts": state.get("financial_facts", [])
+        }
+    
+    current_facts = state.get("financial_facts", [])
+    
+    facts_texts = "\n".join([f"- {f}" for f in current_facts]) if current_facts else "- None"
+
+    prompt = COMPRESSOR_PROMPT.format(
+        latest_user_message=latest_human_message.content,
+        latest_agent_response=latest_ai_message.content,
+        facts_text=facts_texts
+    )
+    
+    structured_llm = model.with_structured_output(CompressorOutput)
+    result = structured_llm.invoke([SystemMessage(content=prompt)], config=config)
+    if result.financial_facts:
+        new_facts = current_facts + result.financial_facts
+    else:
+        new_facts = current_facts
+
+    return {
+        "financial_facts": new_facts
+    }
+    
 
     
 builder = StateGraph(State)
@@ -228,6 +288,7 @@ builder.add_node("guardrail_end", guardrail_end_node)
 builder.add_node("follow_up", follow_up_node)
 builder.add_node("history_and_rewriter", history_and_rewriter_node)
 builder.add_node("agent", agent_node)
+builder.add_node("compressor", compressor_node)
 
 builder.add_conditional_edges(
     START,
@@ -257,7 +318,8 @@ builder.add_conditional_edges(
 )
 builder.add_edge("history_and_rewriter", "guardrail")
 builder.add_edge("guardrail_end", END)
-builder.add_edge("agent", END)
+builder.add_edge("agent", "compressor")
+builder.add_edge("compressor", END)
 
 _graph = None
 _pool = None

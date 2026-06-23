@@ -33,6 +33,7 @@ GUARDRAIL_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["guardrail"]
 # HISTORY_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["history"]
 FOLLOW_UP_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["follow_up"]
 REWRITER_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["rewriter"]
+COMPRESSOR_PROMPT = load_prompts("api/prompts/agent_prompts.yaml")["compressor"]
 FINANCIAL_DOMAINS = Literal[
     "Accounts Payable",
     "Accounts Receivable",
