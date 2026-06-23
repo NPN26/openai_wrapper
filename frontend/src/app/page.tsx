@@ -9,6 +9,7 @@ import SettingsModal from "@/components/settings-modal";
 import LangsmithSettingsModal, {
   LangsmithConfig,
 } from "@/components/langsmith-settings-modal";
+import { ConversationDownload } from "@/components/ai-elements/conversation";
 
 type ChatConfig = { apiKey: string; baseUrl: string; model: string };
 
@@ -209,6 +210,7 @@ export default function Home() {
         onSelectChat={handleSelectChat}
         onDeleteChat={handleDeleteChat}
         refreshKey={chatsRefreshKey}
+        currentThreadId={threadId}
       />
 
       <SettingsModal
@@ -253,6 +255,17 @@ export default function Home() {
               disabled={isLoading}
               className="flex-1"
             />
+            {messages.length > 0 && (
+              <ConversationDownload
+                messages={messages.map((m, i) => ({
+                  id: i.toString(),
+                  role: m.role,
+                  content: m.content,
+                  // Required for Vercel AI SDK v5 UIMessage format
+                  parts: [{ type: "text", text: m.content }],
+                })) as unknown as ConversationDownloadMessages}
+              />
+            )}
             <Button onClick={sendMessage} disabled={isLoading}>
               Send
             </Button>

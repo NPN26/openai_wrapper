@@ -64,11 +64,13 @@ export function Sidebar({
   onSelectChat,
   onDeleteChat,
   refreshKey,
+  currentThreadId, // <-- Added prop
 }: {
   onNewChat: () => void;
   onSelectChat: (threadId: string) => void;
   onDeleteChat: (threadId: string) => void;
   refreshKey: number;
+  currentThreadId?: string; // <-- Added prop type
 }) {
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -97,7 +99,6 @@ export function Sidebar({
     }
   };
 
-
   useEffect(() => {
     void fetchChats();
   }, [refreshKey]);
@@ -124,37 +125,46 @@ export function Sidebar({
         ) : chatHistory.length === 0 ? (
           <div className="text-sm text-muted-foreground px-2">No chats yet.</div>
         ) : (
-          chatHistory.map((chat) => (
-            <div
-              key={chat.threadId}
-              className="group relative flex items-center rounded-lg text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <button
-                type="button"
-                onClick={() => onSelectChat(chat.threadId)}
-                className="flex-1 text-left px-3 py-2 truncate pr-10"
-              >
-                {chat.title || 
-                  (chat.createdAt 
-                    ? 'Chat ' + new Date(chat.createdAt).toLocaleString()
-                    : `Chat ${chat.threadId.substring(0, 8)}`
-                  )
-                }
-              </button>
+          chatHistory.map((chat) => {
+            // Check if this chat is the currently active one
+            const isActive = chat.threadId === currentThreadId;
 
-              <div className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ConfirmDeleteDialog onConfirm={() => onDeleteChat(chat.threadId)} title="Delete Chat?" description="Are you sure you want to delete this chat? This action cannot be undone.">
-                  <button
-                    type="button"
-                    className="p-1 rounded-md hover:bg-destructive/20 hover:text-destructive transition-colors"
-                    aria-label="Delete chat"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </ConfirmDeleteDialog>
+            return (
+              <div
+                key={chat.threadId}
+                className={`group relative flex items-center rounded-lg text-sm font-medium transition-colors ${
+                  isActive 
+                    ? "bg-accent text-accent-foreground" // Active state styling
+                    : "hover:bg-accent hover:text-accent-foreground" // Inactive hover styling
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectChat(chat.threadId)}
+                  className={`flex-1 text-left px-3 py-2 truncate pr-10 ${isActive ? "font-semibold" : ""}`}
+                >
+                  {chat.title || 
+                    (chat.createdAt 
+                      ? 'Chat ' + new Date(chat.createdAt).toLocaleString()
+                      : `Chat ${chat.threadId.substring(0, 8)}`
+                    )
+                  }
+                </button>
+
+                <div className={`absolute right-2 transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                  <ConfirmDeleteDialog onConfirm={() => onDeleteChat(chat.threadId)} title="Delete Chat?" description="Are you sure you want to delete this chat? This action cannot be undone.">
+                    <button
+                      type="button"
+                      className="p-1 rounded-md hover:bg-destructive/20 hover:text-destructive transition-colors"
+                      aria-label="Delete chat"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </ConfirmDeleteDialog>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
