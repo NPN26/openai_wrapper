@@ -134,7 +134,7 @@ export function Sidebar({
                 key={chat.threadId}
                 className={`group relative flex items-center rounded-lg text-sm font-medium transition-colors ${
                   isActive 
-                    ? "bg-accent text-accent-foreground" // Active state styling
+                    ? "bg-black/10 border-1 border-black border-radius text-black" // Active state styling
                     : "hover:bg-accent hover:text-accent-foreground" // Inactive hover styling
                 }`}
               >
