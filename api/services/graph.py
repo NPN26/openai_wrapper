@@ -1,7 +1,7 @@
 from typing import TypedDict, Annotated, Optional, Any, cast
 from langchain.agents import create_agent, AgentState
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
@@ -24,6 +24,7 @@ class State(TypedDict):
     reasoning: Optional[str]
     rewritten_query: Optional[str]
     financial_facts: Optional[list[str]]
+    audit_tool_calls: Optional[list[dict[str, Any]]]
     
 class followUpNodeOutput(BaseModel):
     is_follow_up: bool
@@ -243,8 +244,22 @@ def agent_node(state: State, config: RunnableConfig) -> State:
         {"messages": prompt_messages, "financial_facts": state.get("financial_facts", [])},
         config=config
     )
+    
+    audit_log = []
+    for message in agent_response["messages"]:
+        if isinstance(message, AIMessage) and message.tool_calls:
+            for tc in message.tool_calls:
+                audit_log.append({"type": "Tool_req", "tool": tc['name'], "args": tc['args']})
+        elif isinstance(message, ToolMessage):
+            audit_log.append({"type": "Tool_res", "tool": message.name, "result": str(message.content)[:2500]})
 
-    return {"messages":[agent_response["messages"][-1]]}
+    return {
+        "messages": [agent_response["messages"][-1]],
+        "audit_tool_calls": audit_log,
+        "financial_domain": state.get("financial_domain"),
+        "domain_confidence": state.get("domain_confidence"),
+        "rewritten_query": state.get("rewritten_query")
+    }
 
 def compressor_node(state: State, config: RunnableConfig) -> dict:
     """

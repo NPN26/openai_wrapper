@@ -9,6 +9,9 @@ from langchain_core.tracers.context import tracing_v2_enabled
 from langsmith import Client
 from api.services.graph import get_graph
 from api.config import DEFAULT_MODEL, OPENAI_BASE_URL
+from sqlmodel import Session, select
+from api.database import engine
+from api.services.models import ConversationSession, ChatMessage
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -128,130 +131,172 @@ def chat(req: ChatRequest):
     graph = get_graph()
     config: RunnableConfig = _make_config(req.thread_id, req)
 
-    try:
-        with _langsmith_context(req):
-            result = graph.invoke(
-                {"messages": [HumanMessage(content=req.message)]},
-                config=config,
+    with Session(engine) as db:
+        # 1. GET OR CREATE SESSION (Audit/Business Logic)
+        session = db.get(ConversationSession, req.thread_id)
+        if not session:
+            session = ConversationSession(
+                id=req.thread_id, 
+                user_id="default_user", # TODO: Replace with actual authenticated user
+                created_by="system"
             )
-        reply = _extract_content(result["messages"][-1])
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+
+        # 2. LOG USER MESSAGE IMMEDIATELY
+        user_msg = ChatMessage(
+            session_id=req.thread_id,
+            role="user",
+            content=req.message,
+            message_order=session.turn_count * 2 + 1
+        )
+        db.add(user_msg)
+        db.commit()
+
+        # 3. INVOKE LANGGRAPH (Engine Logic)
+        try:
+            with _langsmith_context(req):
+                result = graph.invoke(
+                    {"messages": [HumanMessage(content=req.message)]},
+                    config=config,
+                )
+        except Exception as exc:
+            # Fail-safe: If the graph crashes, log the error so the audit trail isn't broken
+            error_msg = ChatMessage(session_id=req.thread_id, role="system", content=f"System Error: {str(exc)}")
+            db.add(error_msg)
+            db.commit()
+            error = str(exc)
+            if "Malformed identifier" in error:
+                error += " Use the Azure deployment name in the Model field."
+            raise HTTPException(status_code=500, detail=error)
+
+        # 4. EXTRACT METADATA FOR CUSTOM DB
+        ai_msg = result["messages"][-1]
+        reply = _extract_content(ai_msg)
+        audit_logs = result.get("audit_tool_calls", [])
+        domain = result.get("financial_domain")
+        rewritten_query = result.get("rewritten_query")
+        confidence = result.get("domain_confidence")
+
+        # 5. LOG AI MESSAGE & METADATA
+        ai_db_msg = ChatMessage(
+            session_id=req.thread_id,
+            role="assistant",
+            content=reply,
+            message_order=session.turn_count * 2 + 2,
+            chat_metadata={"tool_audit": audit_logs},
+            routed_to=str(domain) if domain else None
+        )
+        db.add(ai_db_msg)
+
+        # 7. UPDATE SESSION STATS
+        session.turn_count += 1
+        db.commit()
+
         return ChatResponse(reply=reply, thread_id=req.thread_id)
-    except Exception as exc:
-        error = str(exc)
-        if "Malformed identifier" in error:
-            error += " Use the Azure deployment name in the Model field."
-        raise HTTPException(status_code=500, detail=error)
 
 
 @router.get("/chat/{thread_id}/history", response_model=list[MessageOut])
 def get_history(thread_id: str):
     """
     Load prior messages for a thread.
-    Mirrors graph.get_state(config).values.get("messages", []) in Streamlit.
+    than parsing LangGraph's internal state dictionary.
     """
-    graph = get_graph()
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-    try:
-        snapshot = graph.get_state(config)
-        messages = snapshot.values.get("messages", [])
-    except Exception:
-        messages = []
-
-    result = []
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            result.append(MessageOut(role="user", content=_extract_content(msg)))
-        elif isinstance(msg, AIMessage):
-            result.append(MessageOut(role="assistant", content=_extract_content(msg)))
-    return result
+    with Session(engine) as db:
+        statement = (
+            select(ChatMessage)
+            .where(ChatMessage.session_id == thread_id)
+            .order_by(ChatMessage.message_order)
+        )
+        messages = db.exec(statement).all()
+        
+        result = []
+        for msg in messages:
+            if msg.role in ("user", "assistant"):
+                result.append(MessageOut(role=msg.role, content=msg.content))
+        return result
 
 
-@router.post("/chat/stream")
-def chat_stream(req: ChatRequest):
-    """Streaming version - token by token, for a typewriter effect on the frontend."""
-    graph = get_graph()
-    config: RunnableConfig = _make_config(req.thread_id, req)
+# @router.post("/chat/stream")
+# def chat_stream(req: ChatRequest):
+#     """Streaming version - token by token, for a typewriter effect on the frontend."""
+#     graph = get_graph()
+#     config: RunnableConfig = _make_config(req.thread_id, req)
 
-    def token_generator():
-        with _langsmith_context(req):
-            for event in graph.stream(
-                {"messages": [HumanMessage(content=req.message)]},
-                config=config,
-                stream_mode="messages",
-            ):
-                # stream_mode="messages" yields (message_chunk, metadata) tuples
-                message_chunk, _ = event if isinstance(event, tuple) else (event, {})
-                token = getattr(message_chunk, "content", "")
-                if token:
-                    yield token
+#     def token_generator():
+#         with _langsmith_context(req):
+#             for event in graph.stream(
+#                 {"messages": [HumanMessage(content=req.message)]},
+#                 config=config,
+#                 stream_mode="messages",
+#             ):
+#                 # stream_mode="messages" yields (message_chunk, metadata) tuples
+#                 message_chunk, _ = event if isinstance(event, tuple) else (event, {})
+#                 token = getattr(message_chunk, "content", "")
+#                 if token:
+#                     yield token
 
-    return StreamingResponse(token_generator(), media_type="text/plain")
+#     return StreamingResponse(token_generator(), media_type="text/plain")
 
 @router.get("/chats")
 def list_chats():
-    """Retrieve the list of all thread IDs."""
-    try:
-        graph = get_graph()
-        checkpointer = getattr(graph, "checkpointer", None)
-        if not checkpointer:
-            return []
+    """
+    Retrieve the list of all thread IDs.
+    NOW READS FROM CUSTOM DB: Gives you actual Session Titles, Turn Counts, 
+    and User IDs instead of raw Checkpoint thread IDs.
+    """
+    with Session(engine) as db:
+        statement = select(ConversationSession).order_by(ConversationSession.created_at.desc())
+        sessions = db.exec(statement).all()
+        
+        return [
+            {
+                "threadId": s.id, 
+                "createdAt": s.created_at.isoformat() if s.created_at else None,
+                "title": f"Session {s.created_at.isoformat()}" if s.created_at else None,
+                "turn_count": s.turn_count
+            } 
+            for s in sessions
+        ]
 
-        seen: set[str] = set()
-        threads: list[dict] = []
-        for item in checkpointer.list(None):
-            config = item.config
-            thread_id = config.get("configurable", {}).get("thread_id") if isinstance(config, dict) else None
-
-            if thread_id and thread_id not in seen:
-                seen.add(thread_id)
-                created_at = item.metadata.get("created_at") if item.metadata else None
-                threads.append({"threadId": thread_id, "createdAt": created_at})
-
-        return threads
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
     
 @router.delete("/chat/{thread_id}")
 def delete_chat(thread_id: str):
-    """Delete a thread."""
-    try:
-        graph = get_graph()
-        checkpointer = getattr(graph, "checkpointer", None)
-        if not checkpointer:
-            raise HTTPException(status_code=404, detail="No checkpointer configured")
+    """Delete a thread from BOTH LangGraph and Custom DB."""
+    graph = get_graph()
+    checkpointer = getattr(graph, "checkpointer", None)
+    
+    # 1. Delete from LangGraph Memory
+    if checkpointer:
+        try:
+            checkpointer.delete_thread(thread_id)
+        except Exception:
+            pass # Ignore if not found in LG
+            
+    # 2. Delete from Custom DB (Cascade will delete ChatMessages and NLP Tasks)
+    with Session(engine) as db:
+        session = db.get(ConversationSession, thread_id)
+        if session:
+            db.delete(session)
+            db.commit()
+            
+    return {"detail": f"Thread {thread_id} deleted"}
 
-        checkpointer.delete_thread(thread_id)
-        return {"detail": f"Thread {thread_id} deleted"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 @router.delete("/chats")
 def delete_all_chats():
-    """Delete all threads."""
-    try:
-        graph = get_graph()
-        checkpointer = getattr(graph, "checkpointer", None)
-        if not checkpointer:
-            raise HTTPException(status_code=404, detail="No checkpointer configured")
-
-        if _delete_all_threads_fast(checkpointer):
-            return {"detail": "All threads deleted"}
-
-        seen: set[str] = set()
-        for item in checkpointer.list(None):
-            thread_id = (
-                item.config.get("configurable", {}).get("thread_id")
-                if isinstance(item.config, dict)
-                else None
-            )
-            if thread_id and thread_id not in seen:
-                checkpointer.delete_thread(thread_id)
-                seen.add(thread_id)
-
-        return {"detail": "All threads deleted"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    """Delete all threads from BOTH LangGraph and Custom DB."""
+    graph = get_graph()
+    checkpointer = getattr(graph, "checkpointer", None)
+    
+    if checkpointer:
+        _delete_all_threads_fast(checkpointer)
+            
+    with Session(engine) as db:
+        sessions = db.exec(select(ConversationSession)).all()
+        for s in sessions:
+            db.delete(s)
+        db.commit()
+        
+    return {"detail": "All threads deleted"}

@@ -1,5 +1,5 @@
 ## models.py
-from sqlmodel import SQLModel, Field, JSON, Session, select, func
+from sqlmodel import Column, ForeignKey, Index, Relationship, SQLModel, Field, JSON, Session, String, Text, select, func
 from datetime import datetime, date
 from typing import Optional, List, Any
 
@@ -741,6 +741,61 @@ class Suppliers(SQLModel, table=True):
     created_at: Optional[datetime] = Field(default=None, description="Timestamp when the supplier record was created.")
 
     updated_at: Optional[datetime] = Field(default=None, description="Timestamp when the supplier record was last updated.")
+    
+class ConversationSession(SQLModel, table=True):
+    """
+    Python class definition for the Conversation Sessions entity.
+    This table stores session-level metadata for user conversations with the AI assistant.
+    """
+    __tablename__ = "conversation_sessions"
+
+    id: str = Field(default=None, primary_key=True, index=True, description="System-generated internal primary key.")
+
+    user_id: str = Field(default=None, index=True , description="Foreign key referencing users.id for the user associated with this session.")
+    
+    turn_count: int = Field(default=0, description="Number of turns (user + assistant exchanges) in the conversation session.")
+
+    created_at: datetime = Field(default_factory=datetime.now , description="Timestamp when the conversation session started.")
+
+    updated_at: datetime = Field(default_factory=datetime.now , description="Timestamp when the session metadata was last updated.", sa_column_kwargs={"onupdate": datetime.now()})
+
+    is_active: Optional[bool] = Field(default=True, description="Flag indicating whether the session is currently active.")
+    
+    chat_messages: list["ChatMessage"] = Relationship(
+        back_populates="session", 
+        cascade_delete=True, 
+        passive_deletes=True
+    )
+    
+class ChatMessage(SQLModel, table=True):
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_session_created_id", "session_id", "created_at", "id"),
+    )
+    
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    
+    # ForeignKey with ondelete requires explicit sa_column definition
+    session_id: str = Field(
+    sa_column=Column(
+        String(36),
+        ForeignKey("conversation_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+)
+    
+    role: str = Field(max_length=20) 
+    content: str = Field(sa_column=Column(Text, nullable=False))
+    chat_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    
+    message_order: int = Field(default=0)
+    message_uuid: Optional[str] = Field(default=None, max_length=36, index=True)
+    routed_to: Optional[str] = Field(default=None, max_length=30)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # This matches "chat_messages" on ConversationSession
+    session: Optional["ConversationSession"] = Relationship(back_populates="chat_messages")
     
 def get_tables_summary() -> str:
     """
